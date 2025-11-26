@@ -1,30 +1,44 @@
-// services/api.js
 import axios from 'axios';
 
-const API_BASE_URL = 'https://b0c8690b82bb.ngrok-free.app/api';
+// Use environment variable for base URL
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
+console.log('🔧 API Base URL:', API_BASE_URL); // Debug log
+
+// Create axios instance with base URL
 const api = axios.create({
   baseURL: API_BASE_URL,
+  timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
-// Add request interceptor to include tokens if needed
+// Request interceptor
 api.interceptors.request.use(
   (config) => {
-    // You can add token here later when you implement token storage
+    console.log(`🚀 ${config.method?.toUpperCase()} ${config.url}`, config.data || '');
     return config;
   },
   (error) => {
+    console.error('❌ Request error:', error);
     return Promise.reject(error);
   }
 );
 
-// Add response interceptor to handle errors
+// Response interceptor
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    console.log(`✅ ${response.status} ${response.config.url}:`, response.data);
+    return response;
+  },
   (error) => {
+    console.error('❌ Response error:', {
+      url: error.config?.url,
+      status: error.response?.status,
+      data: error.response?.data,
+      message: error.message
+    });
     return Promise.reject(error);
   }
 );
