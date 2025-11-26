@@ -5,6 +5,7 @@ const authSlice = createSlice({
   name: 'auth',
   initialState: {
     memberNumber: null,
+    generatedOTP: '',
     isLoading: false,
     requiresOTP: false,
     error: null,
@@ -25,6 +26,7 @@ const authSlice = createSlice({
     loginSuccess: (state, action) => {
       state.isLoading = false;
       state.memberNumber = action.payload.member_number;
+      state.generatedOTP = action.payload.generatedOTP || '';
       state.requiresOTP = action.payload.requires_otp;
       state.error = null;
     },

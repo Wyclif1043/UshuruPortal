@@ -38,31 +38,42 @@ const Login = () => {
     });
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    if (!formData.username || !formData.password) {
-      dispatch(loginFailure('Please fill in all fields'));
-      return;
-    }
+  // In src/pages/auth/Login.jsx - Update the handleSubmit function
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  
+  if (!formData.username || !formData.password) {
+    dispatch(loginFailure('Please fill in all fields'));
+    return;
+  }
 
-    dispatch(loginStart());
+  dispatch(loginStart());
+  
+  try {
+    const response = await authService.loginMember(formData);
     
-    try {
-      const response = await authService.loginMember(formData);
-      
-      if (response.status === 'otp_required' && response.requires_otp) {
-        dispatch(loginSuccess(response));
-        // Redirect to OTP verification page
-        navigate('/otp-verification');
-      } else {
-        dispatch(loginFailure('Unexpected response from server'));
+    if (response.status === 'otp_required' && response.requires_otp) {
+      // Store the generated OTP in localStorage for auto-fill
+      if (response.generated_otp) {
+        localStorage.setItem('generatedOTP', response.generated_otp);
+        localStorage.setItem('otpTimestamp', Date.now().toString());
       }
-    } catch (error) {
-      const errorMessage = error.response?.data?.message || 'Login failed. Please try again.';
-      dispatch(loginFailure(errorMessage));
+      
+      dispatch(loginSuccess({
+        member_number: response.member_number,
+        requires_otp: response.requires_otp
+      }));
+      
+      // Redirect to OTP verification page
+      navigate('/otp-verification');
+    } else {
+      dispatch(loginFailure('Unexpected response from server'));
     }
-  };
+  } catch (error) {
+    const errorMessage = error.response?.data?.message || 'Login failed. Please try again.';
+    dispatch(loginFailure(errorMessage));
+  }
+};
 
   const handleJoinNow = () => {
     navigate('/register');
