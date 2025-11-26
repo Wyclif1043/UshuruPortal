@@ -164,7 +164,7 @@ const Sidebar = () => {
           </ul>
         </nav>
 
-        {/* Logout Section */}
+        {/* Logout Section - Fixed at bottom */}
         <div className="sidebar-footer">
           <div className="user-profile">
             <div className="user-avatar">
@@ -240,11 +240,11 @@ const Sidebar = () => {
           box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
         }
 
-        /* Rest of the sidebar styles remain the same as before */
         .sidebar-header {
           padding: 2rem 1.5rem 1.5rem;
           border-bottom: 1px solid rgba(245, 184, 0, 0.2);
           background: rgba(122, 31, 35, 0.95);
+          flex-shrink: 0;
         }
 
         .logo-container {
@@ -315,6 +315,8 @@ const Sidebar = () => {
           flex: 1;
           overflow-y: auto;
           padding: 1rem 0;
+          /* Ensure nav doesn't overlap with footer */
+          margin-bottom: 0;
         }
 
         .nav-menu {
@@ -419,7 +421,12 @@ const Sidebar = () => {
         .sidebar-footer {
           padding: 1.5rem;
           border-top: 1px solid rgba(245, 184, 0, 0.2);
-          background: rgba(90, 21, 25, 0.8);
+          background: rgba(90, 21, 25, 0.9);
+          flex-shrink: 0;
+          /* Ensure footer stays at bottom */
+          margin-top: auto;
+          /* Add some spacing from the nav */
+          border-top: 2px solid rgba(245, 184, 0, 0.3);
         }
 
         .user-profile {
@@ -518,7 +525,7 @@ const Sidebar = () => {
           border-radius: 2px;
         }
 
-        /* Responsive Design */
+        /* Improved Mobile Responsiveness */
         @media (max-width: 768px) {
           .sidebar {
             width: 280px;
@@ -530,6 +537,19 @@ const Sidebar = () => {
 
           .company-subtitle {
             font-size: 0.75rem;
+          }
+
+          .sidebar-footer {
+            padding: 1.25rem;
+            position: sticky;
+            bottom: 0;
+            background: rgba(90, 21, 25, 0.95);
+            backdrop-filter: blur(10px);
+          }
+
+          .logout-button {
+            padding: 1rem;
+            font-size: 1rem;
           }
         }
 
@@ -553,6 +573,46 @@ const Sidebar = () => {
 
           .nav-link {
             padding: 0.875rem 1rem;
+          }
+
+          .sidebar-footer {
+            padding: 1rem;
+          }
+
+          .user-profile {
+            margin-bottom: 0.875rem;
+            padding: 0.625rem;
+          }
+
+          .logout-button {
+            padding: 0.875rem;
+            min-height: 50px;
+          }
+
+          /* Ensure logout button is easily tappable on mobile */
+          .logout-button {
+            min-height: 44px; /* Minimum touch target size */
+          }
+        }
+
+        /* Extra small devices */
+        @media (max-width: 360px) {
+          .sidebar-footer {
+            padding: 0.875rem;
+          }
+
+          .user-profile {
+            flex-direction: column;
+            text-align: center;
+            gap: 0.5rem;
+          }
+
+          .user-info {
+            align-items: center;
+          }
+
+          .logout-button {
+            justify-content: center;
           }
         }
       `}</style>
