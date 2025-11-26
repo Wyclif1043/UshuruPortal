@@ -7,7 +7,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'https://b0c8690b82bb.ngrok-free.app',
+        target: 'https://e6d12c589420.ngrok-free.ap',
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path.replace(/^\/api/, '/api'),
