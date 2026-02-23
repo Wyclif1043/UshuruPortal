@@ -37,7 +37,7 @@ const PublicLayout = ({ children }) => {
           <div className="public-header-actions">
             <Link to="/login" className="public-login-link">
               <i className="fas fa-sign-in-alt"></i>
-              <span className="login-text">Member Login</span>
+              <span className="login-text">Member Logout</span>
             </Link>
           </div>
         </div>

@@ -186,7 +186,7 @@ const handleSubmit = async (e) => {
                   Join Our Society
                 </Link>
                 <p className="desktop-join-text">
-                  New to Ushuru? Start your investment journey today!
+                  New to UIC? Start your investment journey today!
                 </p>
               </div>
 
@@ -237,7 +237,7 @@ const handleSubmit = async (e) => {
             <form onSubmit={handleSubmit} className="login-form">
               <div className="form-field">
                 <label htmlFor="username" className="form-label">
-                  Username / Member Number
+                  Member Number/ ID
                 </label>
                 <input
                   id="username"
@@ -341,10 +341,10 @@ const handleSubmit = async (e) => {
               <div className="mobile-social-section">
                 <p className="mobile-social-title">Follow us</p>
                 <div className="mobile-social-links">
-                  <a href="#" title="Facebook"><i className="fab fa-facebook-f"></i></a>
-                  <a href="#" title="Twitter"><i className="fab fa-twitter"></i></a>
-                  <a href="#" title="Instagram"><i className="fab fa-instagram"></i></a>
-                  <a href="#" title="YouTube"><i className="fab fa-youtube"></i></a>
+                  <a href="https://www.facebook.com/profile.php?id=61586705950061" title="Facebook"><i className="fab fa-facebook-f"></i></a>
+                  {/* <a href="#" title="Twitter"><i className="fab fa-twitter"></i></a> */}
+                  <a href="https://www.instagram.com/ushuru_investement?igsh=MTgyb3RodDQzNmQ0aA==" title="Instagram"><i className="fab fa-instagram"></i></a>
+                  {/* <a href="#" title="YouTube"><i className="fab fa-youtube"></i></a> */}
                 </div>
               </div>
             )}

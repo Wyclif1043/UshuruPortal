@@ -27,6 +27,7 @@ const authSlice = createSlice({
       state.isLoading = false;
       state.memberNumber = action.payload.member_number;
       state.generatedOTP = action.payload.generatedOTP || '';
+      state.isAuthenticated = false;
       state.requiresOTP = action.payload.requires_otp;
       state.error = null;
     },
@@ -34,6 +35,7 @@ const authSlice = createSlice({
       state.isLoading = false;
       state.error = action.payload;
       state.requiresOTP = false;
+      state.isAuthenticated = false;
     },
     otpVerificationStart: (state) => {
       state.isLoading = true;

@@ -7,10 +7,9 @@ const CustomerRegistration = () => {
   const [formData, setFormData] = useState({
     name: '',
     address: '',
-    city: '',
-    phoneNo: '',
-    email: '',
-    landBookingFee: ''
+    phoneNumber: '', // Changed from phoneNo to phoneNumber
+    email: ''
+    // Removed city and landBookingFee as they're not in the API
   });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
@@ -33,9 +32,12 @@ const CustomerRegistration = () => {
     setMessage('');
 
     try {
+      // Only send the fields expected by the API
       const customerData = {
-        ...formData,
-        landBookingFee: parseFloat(formData.landBookingFee)
+        name: formData.name,
+        address: formData.address,
+        phoneNumber: formData.phoneNumber,
+        email: formData.email
       };
 
       const response = await authService.createCustomer(customerData);
@@ -49,10 +51,8 @@ const CustomerRegistration = () => {
         setFormData({
           name: '',
           address: '',
-          city: '',
-          phoneNo: '',
-          email: '',
-          landBookingFee: ''
+          phoneNumber: '',
+          email: ''
         });
         
         // Auto-redirect to booking page after 2 seconds
@@ -64,7 +64,7 @@ const CustomerRegistration = () => {
         setMessage(response.error || 'Failed to register customer');
       }
     } catch (err) {
-      setMessage(err.response?.data?.error || 'Error registering customer');
+      setMessage(err.response?.data?.error || err.response?.data?.message || 'Error registering customer');
     } finally {
       setLoading(false);
     }
@@ -82,6 +82,10 @@ const CustomerRegistration = () => {
             <div className="detail-item">
               <strong>Customer Number:</strong>
               <span>{customerNumber}</span>
+            </div>
+            <div className="detail-item" style={{ marginTop: '0.5rem' }}>
+              <strong>Name:</strong>
+              <span>{formData.name}</span>
             </div>
           </div>
           <div className="success-actions">
@@ -111,7 +115,7 @@ const CustomerRegistration = () => {
       <div className="page-container">
         <div className="page-header">
           <h1>Customer Registration</h1>
-          <p>Register a new customer for land booking</p>
+          <p>Register a new customer</p>
         </div>
 
         <div className="registration-form-container">
@@ -147,23 +151,11 @@ const CustomerRegistration = () => {
                 <label>Phone Number *</label>
                 <input
                   type="tel"
-                  name="phoneNo"
-                  value={formData.phoneNo}
+                  name="phoneNumber"
+                  value={formData.phoneNumber}
                   onChange={handleChange}
                   required
                   placeholder="Enter phone number"
-                />
-              </div>
-
-              <div className="form-group">
-                <label>City *</label>
-                <input
-                  type="text"
-                  name="city"
-                  value={formData.city}
-                  onChange={handleChange}
-                  required
-                  placeholder="Enter city"
                 />
               </div>
             </div>
@@ -175,22 +167,8 @@ const CustomerRegistration = () => {
                 value={formData.address}
                 onChange={handleChange}
                 required
-                placeholder="Enter full address"
+                placeholder="Enter full address (e.g., P.O Box 12345 Nairobi)"
                 rows="3"
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Land Booking Fee (KSh) *</label>
-              <input
-                type="number"
-                name="landBookingFee"
-                value={formData.landBookingFee}
-                onChange={handleChange}
-                required
-                min="0"
-                step="0.01"
-                placeholder="Enter booking fee amount"
               />
             </div>
 
@@ -208,15 +186,12 @@ const CustomerRegistration = () => {
 
         <div className="public-navigation">
           <p>
-            Already a member? <Link to="/login">Login here</Link>
-          </p>
-          <p>
-            Want to book land? <Link to="/customer-booking">Go to Land Booking</Link>
+            Already registered? <Link to="/customer-booking">Book Land</Link>
           </p>
         </div>
       </div>
 
-      <style jsx>{`
+     <style jsx>{`
         .customer-registration {
           min-height: calc(100vh - 140px);
           padding: 2rem 1rem;

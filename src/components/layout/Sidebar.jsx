@@ -58,30 +58,30 @@ const Sidebar = () => {
       text: 'Investments',
       description: 'Plot Bookings & Lands'
     },
-    {
-      path: '/contributions',
-      icon: 'fas fa-hand-holding-usd',
-      text: 'Contributions',
-      description: 'Manage Investments'
-    },
+    // {
+    //   path: '/contributions',
+    //   icon: 'fas fa-hand-holding-usd',
+    //   text: 'Contributions',
+    //   description: 'Manage Investments'
+    // },
     {
       path: '/reports',
       icon: 'fas fa-chart-bar',
       text: 'Reports',
       description: 'Financial Reports'
     },
-    {
-      path: '/documents',
-      icon: 'fas fa-file-contract',
-      text: 'Documents',
-      description: 'Forms & Contracts'
-    },
-    {
-      path: '/messages',
-      icon: 'fas fa-comments',
-      text: 'Messages',
-      description: 'Society Communication'
-    },
+    // {
+    //   path: '/documents',
+    //   icon: 'fas fa-file-contract',
+    //   text: 'Documents',
+    //   description: 'Forms & Contracts'
+    // },
+    // {
+    //   path: '/messages',
+    //   icon: 'fas fa-comments',
+    //   text: 'Messages',
+    //   description: 'Society Communication'
+    // },
     {
       path: '/support',
       icon: 'fas fa-headset',

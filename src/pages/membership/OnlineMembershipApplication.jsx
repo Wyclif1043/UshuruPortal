@@ -13,92 +13,143 @@ const OnlineMembershipApplication = () => {
     firstName: '',
     middleName: '',
     lastName: '',
-    salutation: '',
-    primaryIdentificationType: '1',
-    primaryIdentificationNo: '',
-    secondaryIdentificationType: '1',
-    secondaryIdentificationNo: '',
-    pinNumber: '',
+    nationality: '0', // 0 = Kenyan, 1 = Non-Kenyan
+    city: 'Nairobi',
+    town: '',
+    identificationDocument: '1', // 1 = ID Number, 2 = Passport
+    identificationNo: '',
+    passportNo: '',
     dateOfBirth: '',
-    nationality: 'Kenyan',
+    gender: '1', // 1 = Male, 2 = Female
+    kRAPin: '',
+    maritalStatus: '1', // 1 = Single, 2 = Married, 3 = Divorced, 4 = Widower, 5 = Widow
     
     // Contact Information
-    currentAddress: '',
-    city: 'Nairobi',
-    phoneNo: '',
-    emailAddress: '',
+    physicalLocation: '',
+    address: '',
+    postalCode: '',
+    mobilePhoneNo: '',
+    personalEmail: '',
     
     // Employment Information
-    employerName: '',
+    employmentInfo: '1', // 1 = Employed, 2 = Self Employed
+    employerCode: '',
+    
+    // Contribution Information
+    contributionMode: '0', // 0 = Check off, 1 = Back Office Receipt, 2 = Standing Order
+    entranceFeeContribution: '1000.00',
+    sharesContribution: '5000.00',
+    investmentContribution: '0.00',
+    howdidyourhearaboutus: '1', // 1 = Staff, 2 = Member, 3 = Social Media, 4 = Other
+    
+    // Payroll Information
     payrollStaffNo: '',
     
-    // Banking Information
-    bankCode: '01',
-    bankAccountNo: '',
-    
-    // Account Information
-    password: '',
-    confirmPassword: '',
-    
-    // Files
-    signature: null,
-    picture: null,
+    // Files (Base64)
+    pictureBase64: '',
+    idFrontBase64: '',
+    idBackBase64: '',
     
     // Next of Kin
     nextOfKin: [{
       name: '',
       idType: '1',
       idNumber: '',
-      dateOfBirth: '',
+      dob: '',
       address: '',
       phoneNo: '',
       email: '',
-      relationship: ''
+      relationshipCode: '',
+      isBeneficiary: true
     }],
     
-    // Contribution
-    contributionMode: '2'
+    // Nominees (same structure as next of kin but separate)
+    nominees: [{
+      name: '',
+      idType: '1',
+      idNumber: '',
+      dob: '',
+      address: '',
+      phoneNo: '',
+      email: '',
+      relationshipCode: '',
+      isBeneficiary: true
+    }]
   });
 
   const navigate = useNavigate();
 
-  // Bank options
-  const bankOptions = [
-    { value: '01', label: 'Kenya Commercial Bank (KCB)' },
-    { value: '02', label: 'Equity Bank' },
-    { value: '03', label: 'Co-operative Bank' },
-    { value: '04', label: 'Standard Chartered Bank' },
-    { value: '05', label: 'Barclays Bank' },
-    { value: '06', label: 'Absa Bank' },
-    { value: '07', label: 'National Bank' },
-    { value: '08', label: 'DTB Bank' },
-    { value: '09', label: 'NCBA Bank' },
-    { value: '10', label: 'Stanbic Bank' }
+  // Enum mappings based on your SOAP documentation
+  const nationalityOptions = [
+    { value: '0', label: 'Kenyan' },
+    { value: '1', label: 'Non-Kenyan' }
   ];
 
-  const idTypeOptions = [
-    { value: '1', label: 'National ID' },
-    { value: '2', label: 'Passport' },
-    { value: '3', label: 'Alien ID' },
-    { value: '4', label: 'Military ID' }
+  const identificationDocumentOptions = [
+    { value: '1', label: 'ID Number' },
+    { value: '2', label: 'Passport No' },
+    { value: '3', label: 'Service Number' },
+    { value: '4', label: 'Birth Certificate Number' },
+    { value: '5', label: 'Huduma/Maisha Number' },
+    { value: '6', label: 'System UID' }
   ];
 
-  const salutationOptions = [
-    { value: 'Mr', label: 'Mr' },
-    { value: 'Mrs', label: 'Mrs' },
-    { value: 'Miss', label: 'Miss' },
-    { value: 'Dr', label: 'Dr' },
-    { value: 'Prof', label: 'Prof' }
+  const genderOptions = [
+    { value: '1', label: 'Male' },
+    { value: '2', label: 'Female' }
+  ];
+
+  const maritalStatusOptions = [
+    { value: '1', label: 'Single' },
+    { value: '2', label: 'Married' },
+    { value: '3', label: 'Divorced' },
+    { value: '4', label: 'Widower' },
+    { value: '5', label: 'Widow' }
+  ];
+
+  const employmentInfoOptions = [
+    { value: '1', label: 'Employed' },
+    { value: '2', label: 'Self Employed' }
+  ];
+
+  const contributionModeOptions = [
+    { value: '0', label: 'Check off' },
+    { value: '1', label: 'Back Office Receipt' },
+    { value: '2', label: 'Standing Order' }
+  ];
+
+  const referralSourceOptions = [
+    { value: '1', label: 'Staff' },
+    { value: '2', label: 'Member' },
+    { value: '3', label: 'Social Media' },
+    { value: '4', label: 'Other' }
+  ];
+
+  const relationshipOptions = [
+    { value: 'SP', label: 'Spouse' },
+    { value: 'CH', label: 'Child' },
+    { value: 'PR', label: 'Parent' },
+    { value: 'SB', label: 'Sibling' },
+    { value: 'FR', label: 'Friend' },
+    { value: 'OT', label: 'Other' }
   ];
 
   const handleInputChange = (e) => {
     const { name, value, files } = e.target;
     
     if (files) {
-      setFormData(prev => ({
-        ...prev,
-        [name]: files[0]
-      }));
+      // Handle file uploads and convert to base64
+      const file = files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setFormData(prev => ({
+            ...prev,
+            [name]: reader.result
+          }));
+        };
+        reader.readAsDataURL(file);
+      }
     } else {
       setFormData(prev => ({
         ...prev,
@@ -116,6 +167,15 @@ const OnlineMembershipApplication = () => {
     }));
   };
 
+  const handleNomineeChange = (index, field, value) => {
+    const updatedNominees = [...formData.nominees];
+    updatedNominees[index][field] = value;
+    setFormData(prev => ({
+      ...prev,
+      nominees: updatedNominees
+    }));
+  };
+
   const addNextOfKin = () => {
     setFormData(prev => ({
       ...prev,
@@ -125,11 +185,32 @@ const OnlineMembershipApplication = () => {
           name: '',
           idType: '1',
           idNumber: '',
-          dateOfBirth: '',
+          dob: '',
           address: '',
           phoneNo: '',
           email: '',
-          relationship: ''
+          relationshipCode: '',
+          isBeneficiary: true
+        }
+      ]
+    }));
+  };
+
+  const addNominee = () => {
+    setFormData(prev => ({
+      ...prev,
+      nominees: [
+        ...prev.nominees,
+        {
+          name: '',
+          idType: '1',
+          idNumber: '',
+          dob: '',
+          address: '',
+          phoneNo: '',
+          email: '',
+          relationshipCode: '',
+          isBeneficiary: true
         }
       ]
     }));
@@ -145,21 +226,21 @@ const OnlineMembershipApplication = () => {
     }
   };
 
-  const handleFileToBase64 = (file) => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = error => reject(error);
-    });
+  const removeNominee = (index) => {
+    if (formData.nominees.length > 1) {
+      const updatedNominees = formData.nominees.filter((_, i) => i !== index);
+      setFormData(prev => ({
+        ...prev,
+        nominees: updatedNominees
+      }));
+    }
   };
 
   const validateStep = (step) => {
     switch (step) {
       case 1:
-        if (!formData.firstName || !formData.lastName || !formData.salutation || 
-            !formData.primaryIdentificationType || !formData.primaryIdentificationNo ||
-            !formData.pinNumber || !formData.dateOfBirth || !formData.currentAddress) {
+        if (!formData.firstName || !formData.lastName || !formData.identificationNo ||
+            !formData.dateOfBirth || !formData.gender || !formData.maritalStatus) {
           setMessage('Please fill in all required personal information fields');
           setMessageType('error');
           return false;
@@ -167,29 +248,15 @@ const OnlineMembershipApplication = () => {
         return true;
       
       case 2:
-        if (!formData.phoneNo || !formData.emailAddress || !formData.bankCode || !formData.bankAccountNo) {
-          setMessage('Please fill in all required contact and banking information');
+        if (!formData.address || !formData.mobilePhoneNo || !formData.personalEmail) {
+          setMessage('Please fill in all required contact information');
           setMessageType('error');
           return false;
         }
         return true;
       
       case 3:
-        if (!formData.password || !formData.confirmPassword) {
-          setMessage('Please create a password for your account');
-          setMessageType('error');
-          return false;
-        }
-        if (formData.password !== formData.confirmPassword) {
-          setMessage('Passwords do not match');
-          setMessageType('error');
-          return false;
-        }
-        if (formData.password.length < 6) {
-          setMessage('Password must be at least 6 characters long');
-          setMessageType('error');
-          return false;
-        }
+        // Employment and contribution info are not strictly required
         return true;
       
       default:
@@ -209,57 +276,90 @@ const OnlineMembershipApplication = () => {
     setMessage('');
   };
 
+  const handleFileToBase64 = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = error => reject(error);
+    });
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
     setMessage('');
 
     try {
-      // Convert files to base64
-      let signatureBlob = '';
-      let pictureBlob = '';
-
-      if (formData.signature) {
-        signatureBlob = await handleFileToBase64(formData.signature);
-      }
-
-      if (formData.picture) {
-        pictureBlob = await handleFileToBase64(formData.picture);
-      }
-
+      // Prepare the application data matching the SOAP structure
       const applicationData = {
         applicant: {
           firstName: formData.firstName,
           middleName: formData.middleName,
           lastName: formData.lastName,
-          salutation: formData.salutation,
-          primaryIdentificationType: formData.primaryIdentificationType,
-          primaryIdentificationNo: formData.primaryIdentificationNo,
-          secondaryIdentificationType: formData.secondaryIdentificationType,
-          secondaryIdentificationNo: formData.secondaryIdentificationNo,
-          pinNumber: formData.pinNumber,
+          nationality: parseInt(formData.nationality) || 0,
+          city: formData.city || 'Nairobi',
+          town: formData.town || formData.city || 'Nairobi',
+          identificationDocument: formData.identificationDocument,
+          identificationNo: formData.identificationNo,
+          passportNo: formData.passportNo || '',
           dateOfBirth: formData.dateOfBirth,
-          nationality: formData.nationality,
-          currentAddress: formData.currentAddress,
-          city: formData.city,
-          phoneNo: formData.phoneNo,
-          emailAddress: formData.emailAddress,
-          employerName: formData.employerName,
-          payrollStaffNo: formData.payrollStaffNo,
-          bankCode: formData.bankCode,
-          bankAccountNo: formData.bankAccountNo,
-          password: formData.password,
-          signatureBlob: signatureBlob,
-          pictureBlob: pictureBlob,
-          filename: formData.signature ? formData.signature.name : 'signature.png',
-          contributionMode: formData.contributionMode
+          gender: parseInt(formData.gender) || 1,
+          kRAPin: formData.kRAPin || '',
+          maritalStatus: parseInt(formData.maritalStatus) || 1,
+          physicalLocation: formData.physicalLocation || formData.address,
+          address: formData.address,
+          postalCode: formData.postalCode || '',
+          mobilePhoneNo: formData.mobilePhoneNo,
+          personalEmail: formData.personalEmail,
+          employmentInfo: parseInt(formData.employmentInfo) || 1,
+          employerCode: formData.employerCode || '',
+          contributionMode: parseInt(formData.contributionMode) || 0,
+          entranceFeeContribution: parseFloat(formData.entranceFeeContribution) || 1000.00,
+          sharesContribution: parseFloat(formData.sharesContribution) || 5000.00,
+          investmentContribution: parseFloat(formData.investmentContribution) || 0.00,
+          howdidyourhearaboutus: parseInt(formData.howdidyourhearaboutus) || 1,
+          payrollStaffNo: formData.payrollStaffNo || '',
+          pictureBase64: formData.pictureBase64 || '',
+          idFrontBase64: formData.idFrontBase64 || '',
+          idBackBase64: formData.idBackBase64 || ''
         },
-        nextOfKin: formData.nextOfKin
+        nextOfKin: formData.nextOfKin.map(kin => ({
+          name: kin.name,
+          idType: parseInt(kin.idType) || 1,
+          idNumber: kin.idNumber,
+          dob: kin.dob || '',
+          address: kin.address || '',
+          phoneNo: kin.phoneNo || '',
+          email: kin.email || '',
+          relationshipCode: kin.relationshipCode || '',
+          isBeneficiary: kin.isBeneficiary !== false
+        })),
+        nominees: formData.nominees.map(nominee => ({
+          name: nominee.name,
+          idType: parseInt(nominee.idType) || 1,
+          idNumber: nominee.idNumber,
+          dob: nominee.dob || '',
+          address: nominee.address || '',
+          phoneNo: nominee.phoneNo || '',
+          email: nominee.email || '',
+          relationshipCode: nominee.relationshipCode || '',
+          isBeneficiary: nominee.isBeneficiary !== false
+        }))
       };
 
-      console.log('DEBUG: Submitting application data:', applicationData);
+      console.log('Submitting application data:', {
+        ...applicationData,
+        applicant: {
+          ...applicationData.applicant,
+          pictureBase64: applicationData.applicant.pictureBase64 ? '[BASE64_DATA]' : '',
+          idFrontBase64: applicationData.applicant.idFrontBase64 ? '[BASE64_DATA]' : '',
+          idBackBase64: applicationData.applicant.idBackBase64 ? '[BASE64_DATA]' : ''
+        }
+      });
 
-      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/bulk-membership-application/`, {
+      // Update the endpoint to match your backend
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/membership/apply/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -268,22 +368,22 @@ const OnlineMembershipApplication = () => {
       });
 
       const result = await response.json();
-      console.log('DEBUG: Backend response:', result);
+      console.log('Backend response:', result);
 
       if (response.ok && result.status === 'success') {
-        setMessage('Membership application submitted successfully! You will be contacted soon.');
+        setMessage(`Application submitted successfully! Your application number is: ${result.memberAppNo}`);
         setMessageType('success');
         
-        // Redirect to login after 3 seconds
+        // Redirect to success page or login after 5 seconds
         setTimeout(() => {
-          navigate('/login');
-        }, 3000);
+          navigate(`/application-success/${result.memberAppNo}`);
+        }, 5000);
       } else {
-        setMessage(result.message || 'Application submission failed. Please try again.');
+        setMessage(result.message || result.details || 'Application submission failed. Please try again.');
         setMessageType('error');
       }
     } catch (error) {
-      console.error('DEBUG: Submission error:', error);
+      console.error('Submission error:', error);
       setMessage('Network error. Please check your connection and try again.');
       setMessageType('error');
     } finally {
@@ -319,14 +419,15 @@ const OnlineMembershipApplication = () => {
 
         {/* Progress Steps */}
         <div className="progress-steps">
-          {[1, 2, 3, 4].map(step => (
+          {[1, 2, 3, 4, 5].map(step => (
             <div key={step} className={`step ${step === currentStep ? 'active' : ''} ${step < currentStep ? 'completed' : ''}`}>
               <div className="step-number">{step}</div>
               <div className="step-label">
                 {step === 1 && 'Personal Info'}
-                {step === 2 && 'Contact & Bank'}
-                {step === 3 && 'Account Setup'}
-                {step === 4 && 'Review & Submit'}
+                {step === 2 && 'Contact Info'}
+                {step === 3 && 'Employment'}
+                {step === 4 && 'Next of Kin'}
+                {step === 5 && 'Nominees'}
               </div>
             </div>
           ))}
@@ -345,21 +446,6 @@ const OnlineMembershipApplication = () => {
           <div className="form-step">
             <h2>Personal Information</h2>
             <div className="form-grid">
-              <div className="form-group">
-                <label>Salutation *</label>
-                <select 
-                  name="salutation" 
-                  value={formData.salutation} 
-                  onChange={handleInputChange}
-                  required
-                >
-                  <option value="">Select Salutation</option>
-                  {salutationOptions.map(option => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
-              </div>
-
               <div className="form-group">
                 <label>First Name *</label>
                 <input
@@ -393,42 +479,76 @@ const OnlineMembershipApplication = () => {
               </div>
 
               <div className="form-group">
-                <label>Primary ID Type *</label>
+                <label>Nationality *</label>
                 <select 
-                  name="primaryIdentificationType" 
-                  value={formData.primaryIdentificationType} 
+                  name="nationality" 
+                  value={formData.nationality} 
                   onChange={handleInputChange}
                   required
                 >
-                  <option value="">Select ID Type</option>
-                  {idTypeOptions.map(option => (
+                  {nationalityOptions.map(option => (
                     <option key={option.value} value={option.value}>{option.label}</option>
                   ))}
                 </select>
               </div>
 
               <div className="form-group">
-                <label>Primary ID Number *</label>
+                <label>City *</label>
                 <input
                   type="text"
-                  name="primaryIdentificationNo"
-                  value={formData.primaryIdentificationNo}
+                  name="city"
+                  value={formData.city}
                   onChange={handleInputChange}
                   required
                 />
               </div>
 
               <div className="form-group">
-                <label>KRA PIN *</label>
+                <label>Town/Location</label>
                 <input
                   type="text"
-                  name="pinNumber"
-                  value={formData.pinNumber}
+                  name="town"
+                  value={formData.town}
                   onChange={handleInputChange}
-                  required
-                  placeholder="A123456789X"
                 />
               </div>
+
+              <div className="form-group">
+                <label>ID Type *</label>
+                <select 
+                  name="identificationDocument" 
+                  value={formData.identificationDocument} 
+                  onChange={handleInputChange}
+                  required
+                >
+                  {identificationDocumentOptions.map(option => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>ID/Passport Number *</label>
+                <input
+                  type="text"
+                  name="identificationNo"
+                  value={formData.identificationNo}
+                  onChange={handleInputChange}
+                  required
+                />
+              </div>
+
+              {formData.identificationDocument === '2' && (
+                <div className="form-group">
+                  <label>Passport Number</label>
+                  <input
+                    type="text"
+                    name="passportNo"
+                    value={formData.passportNo}
+                    onChange={handleInputChange}
+                  />
+                </div>
+              )}
 
               <div className="form-group">
                 <label>Date of Birth *</label>
@@ -441,15 +561,43 @@ const OnlineMembershipApplication = () => {
                 />
               </div>
 
-              <div className="form-group full-width">
-                <label>Current Address *</label>
-                <textarea
-                  name="currentAddress"
-                  value={formData.currentAddress}
+              <div className="form-group">
+                <label>Gender *</label>
+                <select 
+                  name="gender" 
+                  value={formData.gender} 
                   onChange={handleInputChange}
                   required
-                  rows="3"
+                >
+                  {genderOptions.map(option => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>KRA PIN</label>
+                <input
+                  type="text"
+                  name="kRAPin"
+                  value={formData.kRAPin}
+                  onChange={handleInputChange}
+                  placeholder="A123456789X"
                 />
+              </div>
+
+              <div className="form-group">
+                <label>Marital Status *</label>
+                <select 
+                  name="maritalStatus" 
+                  value={formData.maritalStatus} 
+                  onChange={handleInputChange}
+                  required
+                >
+                  {maritalStatusOptions.map(option => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
               </div>
             </div>
 
@@ -461,20 +609,53 @@ const OnlineMembershipApplication = () => {
           </div>
         )}
 
-        {/* Step 2: Contact & Banking Information */}
+        {/* Step 2: Contact Information */}
         {currentStep === 2 && (
           <div className="form-step">
-            <h2>Contact & Banking Information</h2>
+            <h2>Contact Information</h2>
             <div className="form-grid">
               <div className="form-group">
-                <label>Phone Number *</label>
+                <label>Physical Location</label>
                 <input
-                  type="tel"
-                  name="phoneNo"
-                  value={formData.phoneNo}
+                  type="text"
+                  name="physicalLocation"
+                  value={formData.physicalLocation}
+                  onChange={handleInputChange}
+                  placeholder="e.g., Westlands, Nairobi"
+                />
+              </div>
+
+              <div className="form-group full-width">
+                <label>Address *</label>
+                <textarea
+                  name="address"
+                  value={formData.address}
                   onChange={handleInputChange}
                   required
-                  placeholder="+254712345678"
+                  rows="3"
+                  placeholder="Full physical address including street"
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Postal Code</label>
+                <input
+                  type="text"
+                  name="postalCode"
+                  value={formData.postalCode}
+                  onChange={handleInputChange}
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Mobile Phone *</label>
+                <input
+                  type="tel"
+                  name="mobilePhoneNo"
+                  value={formData.mobilePhoneNo}
+                  onChange={handleInputChange}
+                  required
+                  placeholder="254712345678"
                 />
               </div>
 
@@ -482,54 +663,8 @@ const OnlineMembershipApplication = () => {
                 <label>Email Address *</label>
                 <input
                   type="email"
-                  name="emailAddress"
-                  value={formData.emailAddress}
-                  onChange={handleInputChange}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Employer Name</label>
-                <input
-                  type="text"
-                  name="employerName"
-                  value={formData.employerName}
-                  onChange={handleInputChange}
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Payroll Staff No</label>
-                <input
-                  type="text"
-                  name="payrollStaffNo"
-                  value={formData.payrollStaffNo}
-                  onChange={handleInputChange}
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Bank *</label>
-                <select 
-                  name="bankCode" 
-                  value={formData.bankCode} 
-                  onChange={handleInputChange}
-                  required
-                >
-                  <option value="">Select Bank</option>
-                  {bankOptions.map(option => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="form-group">
-                <label>Bank Account Number *</label>
-                <input
-                  type="text"
-                  name="bankAccountNo"
-                  value={formData.bankAccountNo}
+                  name="personalEmail"
+                  value={formData.personalEmail}
                   onChange={handleInputChange}
                   required
                 />
@@ -547,42 +682,103 @@ const OnlineMembershipApplication = () => {
           </div>
         )}
 
-        {/* Step 3: Account Setup */}
+        {/* Step 3: Employment & Contribution */}
         {currentStep === 3 && (
           <div className="form-step">
-            <h2>Account Setup</h2>
+            <h2>Employment & Contribution Information</h2>
             <div className="form-grid">
               <div className="form-group">
-                <label>Password *</label>
-                <input
-                  type="password"
-                  name="password"
-                  value={formData.password}
+                <label>Employment Status</label>
+                <select 
+                  name="employmentInfo" 
+                  value={formData.employmentInfo} 
                   onChange={handleInputChange}
-                  required
-                  minLength="6"
+                >
+                  {employmentInfoOptions.map(option => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Employer Code</label>
+                <input
+                  type="text"
+                  name="employerCode"
+                  value={formData.employerCode}
+                  onChange={handleInputChange}
                 />
               </div>
 
               <div className="form-group">
-                <label>Confirm Password *</label>
-                <input
-                  type="password"
-                  name="confirmPassword"
-                  value={formData.confirmPassword}
+                <label>Contribution Mode</label>
+                <select 
+                  name="contributionMode" 
+                  value={formData.contributionMode} 
                   onChange={handleInputChange}
-                  required
-                  minLength="6"
+                >
+                  {contributionModeOptions.map(option => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Entrance Fee</label>
+                <input
+                  type="number"
+                  name="entranceFeeContribution"
+                  value={formData.entranceFeeContribution}
+                  onChange={handleInputChange}
+                  step="0.01"
+                  min="0"
                 />
               </div>
 
               <div className="form-group">
-                <label>Signature Upload</label>
+                <label>Shares Contribution</label>
                 <input
-                  type="file"
-                  name="signature"
+                  type="number"
+                  name="sharesContribution"
+                  value={formData.sharesContribution}
                   onChange={handleInputChange}
-                  accept="image/*,.pdf"
+                  step="0.01"
+                  min="0"
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Investment Contribution</label>
+                <input
+                  type="number"
+                  name="investmentContribution"
+                  value={formData.investmentContribution}
+                  onChange={handleInputChange}
+                  step="0.01"
+                  min="0"
+                />
+              </div>
+
+              <div className="form-group">
+                <label>How did you hear about us?</label>
+                <select 
+                  name="howdidyourhearaboutus" 
+                  value={formData.howdidyourhearaboutus} 
+                  onChange={handleInputChange}
+                >
+                  {referralSourceOptions.map(option => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Payroll Staff No</label>
+                <input
+                  type="text"
+                  name="payrollStaffNo"
+                  value={formData.payrollStaffNo}
+                  onChange={handleInputChange}
                 />
               </div>
 
@@ -590,7 +786,27 @@ const OnlineMembershipApplication = () => {
                 <label>Profile Picture</label>
                 <input
                   type="file"
-                  name="picture"
+                  name="pictureBase64"
+                  onChange={handleInputChange}
+                  accept="image/*"
+                />
+              </div>
+
+              <div className="form-group">
+                <label>ID Front Image</label>
+                <input
+                  type="file"
+                  name="idFrontBase64"
+                  onChange={handleInputChange}
+                  accept="image/*"
+                />
+              </div>
+
+              <div className="form-group">
+                <label>ID Back Image</label>
+                <input
+                  type="file"
+                  name="idBackBase64"
                   onChange={handleInputChange}
                   accept="image/*"
                 />
@@ -608,7 +824,7 @@ const OnlineMembershipApplication = () => {
           </div>
         )}
 
-        {/* Step 4: Next of Kin & Review */}
+        {/* Step 4: Next of Kin */}
         {currentStep === 4 && (
           <div className="form-step">
             <h2>Next of Kin Information</h2>
@@ -644,8 +860,7 @@ const OnlineMembershipApplication = () => {
                       value={kin.idType}
                       onChange={(e) => handleNextOfKinChange(index, 'idType', e.target.value)}
                     >
-                      <option value="">Select ID Type</option>
-                      {idTypeOptions.map(option => (
+                      {identificationDocumentOptions.map(option => (
                         <option key={option.value} value={option.value}>{option.label}</option>
                       ))}
                     </select>
@@ -664,9 +879,33 @@ const OnlineMembershipApplication = () => {
                     <label>Date of Birth</label>
                     <input
                       type="date"
-                      value={kin.dateOfBirth}
-                      onChange={(e) => handleNextOfKinChange(index, 'dateOfBirth', e.target.value)}
+                      value={kin.dob}
+                      onChange={(e) => handleNextOfKinChange(index, 'dob', e.target.value)}
                     />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Relationship</label>
+                    <select 
+                      value={kin.relationshipCode}
+                      onChange={(e) => handleNextOfKinChange(index, 'relationshipCode', e.target.value)}
+                    >
+                      <option value="">Select Relationship</option>
+                      {relationshipOptions.map(option => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label>Is Beneficiary?</label>
+                    <select 
+                      value={kin.isBeneficiary}
+                      onChange={(e) => handleNextOfKinChange(index, 'isBeneficiary', e.target.value === 'true')}
+                    >
+                      <option value={true}>Yes</option>
+                      <option value={false}>No</option>
+                    </select>
                   </div>
 
                   <div className="form-group full-width">
@@ -709,6 +948,137 @@ const OnlineMembershipApplication = () => {
               <button type="button" onClick={prevStep} className="prev-button">
                 <i className="fas fa-arrow-left"></i> Previous
               </button>
+              <button type="button" onClick={nextStep} className="next-button">
+                Next <i className="fas fa-arrow-right"></i>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 5: Nominees */}
+        {currentStep === 5 && (
+          <div className="form-step">
+            <h2>Nominee Information</h2>
+            
+            {formData.nominees.map((nominee, index) => (
+              <div key={index} className="kin-section">
+                <div className="kin-header">
+                  <h3>Nominee {index + 1}</h3>
+                  {formData.nominees.length > 1 && (
+                    <button 
+                      type="button" 
+                      onClick={() => removeNominee(index)}
+                      className="remove-kin-button"
+                    >
+                      <i className="fas fa-times"></i> Remove
+                    </button>
+                  )}
+                </div>
+                
+                <div className="form-grid">
+                  <div className="form-group">
+                    <label>Full Name</label>
+                    <input
+                      type="text"
+                      value={nominee.name}
+                      onChange={(e) => handleNomineeChange(index, 'name', e.target.value)}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>ID Type</label>
+                    <select 
+                      value={nominee.idType}
+                      onChange={(e) => handleNomineeChange(index, 'idType', e.target.value)}
+                    >
+                      {identificationDocumentOptions.map(option => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label>ID Number</label>
+                    <input
+                      type="text"
+                      value={nominee.idNumber}
+                      onChange={(e) => handleNomineeChange(index, 'idNumber', e.target.value)}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Date of Birth</label>
+                    <input
+                      type="date"
+                      value={nominee.dob}
+                      onChange={(e) => handleNomineeChange(index, 'dob', e.target.value)}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Relationship</label>
+                    <select 
+                      value={nominee.relationshipCode}
+                      onChange={(e) => handleNomineeChange(index, 'relationshipCode', e.target.value)}
+                    >
+                      <option value="">Select Relationship</option>
+                      {relationshipOptions.map(option => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label>Is Beneficiary?</label>
+                    <select 
+                      value={nominee.isBeneficiary}
+                      onChange={(e) => handleNomineeChange(index, 'isBeneficiary', e.target.value === 'true')}
+                    >
+                      <option value={true}>Yes</option>
+                      <option value={false}>No</option>
+                    </select>
+                  </div>
+
+                  <div className="form-group full-width">
+                    <label>Address</label>
+                    <textarea
+                      value={nominee.address}
+                      onChange={(e) => handleNomineeChange(index, 'address', e.target.value)}
+                      rows="2"
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Phone Number</label>
+                    <input
+                      type="tel"
+                      value={nominee.phoneNo}
+                      onChange={(e) => handleNomineeChange(index, 'phoneNo', e.target.value)}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Email</label>
+                    <input
+                      type="email"
+                      value={nominee.email}
+                      onChange={(e) => handleNomineeChange(index, 'email', e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            <div className="add-kin-section">
+              <button type="button" onClick={addNominee} className="add-kin-button">
+                <i className="fas fa-plus"></i> Add Another Nominee
+              </button>
+            </div>
+
+            <div className="form-actions">
+              <button type="button" onClick={prevStep} className="prev-button">
+                <i className="fas fa-arrow-left"></i> Previous
+              </button>
               <button 
                 type="button" 
                 onClick={handleSubmit} 
@@ -741,7 +1111,7 @@ const OnlineMembershipApplication = () => {
         }
 
         .application-container {
-          max-width: 800px;
+          max-width: 900px;
           width: 100%;
           background: #F5B800;
           border-radius: 1rem;
@@ -873,6 +1243,8 @@ const OnlineMembershipApplication = () => {
         .form-step {
           padding: 2rem;
           background: #F5B800;
+          max-height: 70vh;
+          overflow-y: auto;
         }
 
         .form-step h2 {
@@ -885,7 +1257,7 @@ const OnlineMembershipApplication = () => {
 
         .form-grid {
           display: grid;
-          grid-template-columns: 1fr 1fr;
+          grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
           gap: 1rem;
           margin-bottom: 1.5rem;
         }
@@ -1111,6 +1483,8 @@ const OnlineMembershipApplication = () => {
           
           .form-step {
             padding: 1.5rem 1rem;
+            max-height: none;
+            overflow-y: visible;
           }
         }
       `}</style>

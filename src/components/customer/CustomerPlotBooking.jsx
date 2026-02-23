@@ -1,66 +1,70 @@
+// src/components/customer/CustomerPlotBooking.jsx
 import React, { useState, useEffect } from 'react';
-import { authService } from '../../services/authService';
 
-const CustomerPlotBooking = ({ customerNo, land, onBookingSuccess, onBack }) => {
-  const [plots, setPlots] = useState([]);
+const CustomerPlotBooking = ({ customerNo, land, plots, onBookingSuccess, onBack }) => {
   const [selectedPlot, setSelectedPlot] = useState(null);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [plotsLoading, setPlotsLoading] = useState(true);
+  const [paymentLoading, setPaymentLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [paymentMessage, setPaymentMessage] = useState('');
+  const [paymentStatus, setPaymentStatus] = useState(null);
   const [formData, setFormData] = useState({
     bookingDate: new Date().toISOString().split('T')[0],
-    bookingFee: ''
+    phoneNumber: '',
+    bookingFee: '',
+    transactionReferenceNo: ''
   });
 
+  // Add effect to prevent body scroll when modal is open
   useEffect(() => {
-    loadPlots();
-  }, [land]);
-
-  const loadPlots = async () => {
-    setPlotsLoading(true);
-    try {
-      const response = await authService.getPlotsByLand(land['Land Code']);
-      if (response.success) {
-        // Filter only available plots and ensure prices are properly formatted
-        const availablePlots = response.plots
-          .filter(plot => plot['Plot Status']?.toLowerCase() === 'available')
-          .map(plot => ({
-            ...plot,
-            // Ensure prices are numbers and have proper values
-            'Member Price': parseFloat(plot['Member Price']) || 0,
-            'Non Member Price': parseFloat(plot['Non Member Price']) || 0,
-            'Area': parseFloat(plot['Area']) || 0
-          }));
-        setPlots(availablePlots);
-      } else {
-        setError('Failed to load plots');
-      }
-    } catch (err) {
-      setError('Error loading plots');
-      console.error('Error loading plots:', err);
-    } finally {
-      setPlotsLoading(false);
+    if (showPaymentModal) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
     }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [showPaymentModal]);
+
+  // Helper function to parse price (removes commas and converts to number)
+  const parsePrice = (price) => {
+    if (!price && price !== 0) return 0;
+    // Remove commas and convert to number
+    const cleaned = String(price).replace(/,/g, '');
+    const parsed = parseFloat(cleaned);
+    return isNaN(parsed) ? 0 : parsed;
   };
 
   const handlePlotSelect = (plot) => {
     setSelectedPlot(plot);
+    // Parse the price to remove commas before setting in form
+    const parsedPrice = parsePrice(plot.non_member_price || plot.member_price);
+    setFormData(prev => ({
+      ...prev,
+      bookingFee: parsedPrice
+    }));
     setError('');
     setSuccess('');
-    // Set default booking fee based on plot price
-    if (plot['Member Price'] && plot['Member Price'] > 0) {
-      setFormData(prev => ({
-        ...prev,
-        bookingFee: plot['Member Price'].toString()
-      }));
-    } else {
-      // If no price, let user enter manually
-      setFormData(prev => ({
-        ...prev,
-        bookingFee: ''
-      }));
-    }
+    setPaymentMessage('');
+    setPaymentStatus(null);
+    // Open payment modal
+    setShowPaymentModal(true);
+  };
+
+  const handleClosePaymentModal = () => {
+    setShowPaymentModal(false);
+    setSelectedPlot(null);
+    setError('');
+    setPaymentMessage('');
+    setPaymentStatus(null);
+    setFormData(prev => ({
+      ...prev,
+      phoneNumber: '',
+      bookingFee: prev.bookingFee // Keep the booking fee
+    }));
   };
 
   const handleInputChange = (e) => {
@@ -71,69 +75,170 @@ const CustomerPlotBooking = ({ customerNo, land, onBookingSuccess, onBack }) => 
     }));
   };
 
-  const generateBookingNumber = () => {
-    const timestamp = new Date().getTime();
-    return `BKG${timestamp}`;
+  const generateSessionId = () => {
+    return 'SW' + Math.random().toString(36).substring(2, 12).toUpperCase();
   };
 
-  const handleBookingSubmit = async (e) => {
+  const handleInitiatePayment = async (e) => {
     e.preventDefault();
-    
+
     if (!selectedPlot) {
       setError('Please select a plot first');
       return;
     }
 
-    if (!formData.bookingFee || parseFloat(formData.bookingFee) <= 0) {
-      setError('Please enter a valid booking fee');
+    const phoneNumber = formData.phoneNumber.trim();
+    if (!phoneNumber) {
+      setError('Phone number is required');
       return;
     }
 
+    if (!formData.bookingFee || parseFloat(formData.bookingFee) <= 0) {
+      setError('Please enter a valid booking fee amount');
+      return;
+    }
+
+    setPaymentLoading(true);
+    setPaymentMessage('');
+    setError('');
+
+    try {
+      let formattedPhone = phoneNumber;
+      if (phoneNumber.startsWith('0')) {
+        formattedPhone = '254' + phoneNumber.substring(1);
+      } else if (phoneNumber.startsWith('7')) {
+        formattedPhone = '254' + phoneNumber;
+      } else if (!phoneNumber.startsWith('254')) {
+        formattedPhone = '254' + phoneNumber;
+      }
+
+      if (formattedPhone.length !== 12) {
+        throw new Error('Please enter a valid Safaricom number (e.g., 254706126213)');
+      }
+
+      const paymentData = {
+        sessionID: generateSessionId(),
+        phonenumber: formattedPhone,
+        amount: formData.bookingFee,
+        accno: customerNo || formattedPhone,
+        transactionType: "LandDeposit",
+        orgCode: "68"
+      };
+
+      console.log('Initiating STK Push for customer:', paymentData);
+
+      const response = await fetch('http://127.0.0.1:8000/api/mpesa-stk-push/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(paymentData)
+      });
+
+      const data = await response.json();
+      console.log('STK Push response:', data);
+
+      if (data.ResultCode === "0") {
+        setPaymentMessage('Payment successful! Proceeding with plot booking...');
+        setPaymentStatus('success');
+
+        const transactionRef = data.TransactionID || `MPESA${Date.now()}`;
+        setFormData(prev => ({
+          ...prev,
+          transactionReferenceNo: transactionRef
+        }));
+
+        setTimeout(async () => {
+          await handleBookingSubmit(transactionRef);
+        }, 1500);
+
+      } else if (data.ResultCode === "1032") {
+        setPaymentMessage('Transaction cancelled by user');
+        setPaymentStatus('cancelled');
+      } else if (data.ResultCode === "1037") {
+        setPaymentMessage('Transaction timeout. Please try again.');
+        setPaymentStatus('timeout');
+      } else if (data.ResultCode === "1") {
+        setPaymentMessage('Insufficient balance. Please top up and try again.');
+        setPaymentStatus('failed');
+      } else {
+        setPaymentMessage(data.ResultDesc || 'Payment failed');
+        setPaymentStatus('failed');
+      }
+    } catch (err) {
+      console.error('Payment initiation error:', err);
+      setPaymentMessage(err.message || 'Error initiating payment');
+      setPaymentStatus('failed');
+    } finally {
+      setPaymentLoading(false);
+    }
+  };
+
+  const handleBookingSubmit = async (transactionRef) => {
     setLoading(true);
     setError('');
-    setSuccess('');
 
     try {
       const bookingData = {
         customerNo: customerNo,
         landCode: land['Land Code'],
-        plotCode: selectedPlot['Plot Code.'],
+        plotCode: selectedPlot.plot_code,
         bookingDate: formData.bookingDate,
-        bookingFee: parseFloat(formData.bookingFee),
-        bookingNo: generateBookingNumber(),
-        buyerName: "Customer" // You'll need to get this from customer registration
+        buyerName: "Customer",
+        bookingFeePaid: parseFloat(formData.bookingFee),
+        transactionReferenceNo: transactionRef
       };
 
       console.log('📤 Sending booking request:', bookingData);
 
-      const response = await authService.customerBookPlot(bookingData);
-      
-      console.log('✅ Booking response:', response);
+      const response = await fetch('http://127.0.0.1:8000/api/book-plot-non-member/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(bookingData)
+      });
 
-      if (response.success) {
-        setSuccess('Plot booked successfully!');
+      const data = await response.json();
+      console.log('✅ Booking response:', data);
+
+      if (data.success) {
+        setSuccess(`
+          Plot booked successfully! 
+          We will send you notifications about your plot status via email and SMS.
+          Please check your registered contact details for updates.
+        `);
+        // Close payment modal after successful booking
+        setShowPaymentModal(false);
         setTimeout(() => {
           onBookingSuccess();
-        }, 2000);
+        }, 4000);
       } else {
-        setError(response.error || 'Failed to book plot');
+        setError(data.error || 'Failed to book plot');
       }
     } catch (err) {
       console.error('❌ Booking error:', err);
-      setError(err.response?.data?.error || 'Error booking plot. Please try again.');
+      setError('Error booking plot. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
+  // Improved formatCurrency function that handles both string and number inputs
   const formatCurrency = (amount) => {
-    if (!amount || amount === 0) return 'Ksh 0';
+    if (!amount && amount !== 0) return 'Ksh 0';
+
+    // First parse the amount to remove any existing commas
+    const parsedAmount = parsePrice(amount);
+
+    if (parsedAmount === 0) return 'Ksh 0';
+
     return new Intl.NumberFormat('en-KE', {
       style: 'currency',
       currency: 'KES',
       minimumFractionDigits: 0,
       maximumFractionDigits: 0
-    }).format(amount);
+    }).format(parsedAmount);
   };
 
   const getStatusColor = (status) => {
@@ -145,231 +250,314 @@ const CustomerPlotBooking = ({ customerNo, land, onBookingSuccess, onBack }) => 
     }
   };
 
+  const getPaymentStatusMessage = () => {
+    switch (paymentStatus) {
+      case 'pending':
+        return { text: 'Waiting for payment confirmation...', icon: 'fa-spinner fa-pulse', color: '#F59E0B' };
+      case 'success':
+        return { text: 'Payment successful!', icon: 'fa-check-circle', color: '#10B981' };
+      case 'cancelled':
+        return { text: 'Payment cancelled', icon: 'fa-times-circle', color: '#EF4444' };
+      case 'failed':
+        return { text: 'Payment failed', icon: 'fa-exclamation-circle', color: '#EF4444' };
+      case 'timeout':
+        return { text: 'Payment timeout', icon: 'fa-clock', color: '#EF4444' };
+      default:
+        return { text: '', icon: '', color: '' };
+    }
+  };
+
+  // Split plots into rows of 3
+  const chunkArray = (array, chunkSize) => {
+    const chunks = [];
+    for (let i = 0; i < array.length; i += chunkSize) {
+      chunks.push(array.slice(i, i + chunkSize));
+    }
+    return chunks;
+  };
+
+  const plotRows = chunkArray(plots, 3);
+
   return (
-    <div className="customer-plot-booking">
-      {/* Header */}
-      <div className="booking-header">
-        <button onClick={onBack} className="back-button">
-          <i className="fas fa-arrow-left"></i>
-          Back to Lands
-        </button>
-        <div className="header-content">
-          <h1>Book a Plot</h1>
-          <p>Select a plot and complete booking for {land.Description}</p>
-        </div>
-        <div className="customer-badge">
-          <i className="fas fa-user"></i>
-          Customer: {customerNo}
+    <div className="customer-plot-booking-modal">
+      {/* Modal Overlay */}
+      <div className="modal-overlay">
+        {/* Modal Container */}
+        <div className="modal-container">
+          {/* Modal Header */}
+          <div className="modal-header">
+            <div className="modal-title">
+              <h2>Available Plots</h2>
+              <p>{land?.Description} - {land?.['Land Code']}</p>
+            </div>
+            <button className="close-button" onClick={onBack}>
+              <i className="fas fa-times"></i>
+            </button>
+          </div>
+
+          {/* Modal Content */}
+          <div className="modal-content">
+            {/* Error/Success Messages */}
+            {error && !showPaymentModal && (
+              <div className="message error">
+                <i className="fas fa-exclamation-circle"></i>
+                {error}
+                <button onClick={() => setError('')} className="close-message">
+                  <i className="fas fa-times"></i>
+                </button>
+              </div>
+            )}
+
+            {success && (
+              <div className="message success">
+                <div className="success-icon">
+                  <i className="fas fa-check-circle"></i>
+                </div>
+                <div className="success-content">
+                  <div className="success-title">Booking Confirmed! 🎉</div>
+                  <div className="success-message">
+                    {success}
+                  </div>
+                  <div className="notification-badges">
+                    <span className="badge email">
+                      <i className="fas fa-envelope"></i>
+                      Email
+                    </span>
+                    <span className="badge sms">
+                      <i className="fas fa-mobile-alt"></i>
+                      SMS
+                    </span>
+                  </div>
+                </div>
+                <button onClick={() => setSuccess('')} className="close-message">
+                  <i className="fas fa-times"></i>
+                </button>
+              </div>
+            )}
+
+            <div className="booking-content">
+              {/* Available Plots Section */}
+              <div className="plots-section">
+                <div className="section-header">
+                  <h3>Select a Plot</h3>
+                  <p>Choose from available plots below</p>
+                </div>
+
+                {plots.length > 0 ? (
+                  <div className="plots-grid-container">
+                    {plotRows.map((row, rowIndex) => (
+                      <div key={rowIndex} className="plots-row">
+                        {row.map((plot, colIndex) => (
+                          <div
+                            key={`${rowIndex}-${colIndex}`}
+                            className={`plot-card ${getStatusColor(plot.plot_status)} ${selectedPlot?.plot_code === plot.plot_code ? 'selected' : ''}`}
+                            onClick={() => handlePlotSelect(plot)}
+                          >
+                            <div className="plot-card-header">
+                              <h3 className="plot-code">{plot.plot_code}</h3>
+                              <span className={`status-badge status-${getStatusColor(plot.plot_status)}`}>
+                                {plot.plot_status}
+                              </span>
+                            </div>
+
+                            <div className="plot-card-body">
+                              <div className="plot-details">
+                                <div className="detail-item">
+                                  <span className="label">Area:</span>
+                                  <span className="value">{plot.area} acres</span>
+                                </div>
+                                <div className="detail-item">
+                                  <span className="label">Member Price:</span>
+                                  <span className="value price">{formatCurrency(plot.member_price)}</span>
+                                </div>
+                                <div className="detail-item">
+                                  <span className="label">Non-Member:</span>
+                                  <span className="value">{formatCurrency(plot.non_member_price)}</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="plot-card-footer">
+                              {selectedPlot?.plot_code === plot.plot_code ? (
+                                <div className="selected-indicator">
+                                  <i className="fas fa-check-circle"></i>
+                                  Selected
+                                </div>
+                              ) : (
+                                <button className="select-plot-button">
+                                  <i className="fas fa-hand-pointer"></i>
+                                  Select Plot
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                        {/* Fill empty slots with invisible cards to maintain grid */}
+                        {row.length < 3 && [...Array(3 - row.length)].map((_, i) => (
+                          <div key={`empty-${i}`} className="plot-card placeholder" aria-hidden="true" />
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="empty-state">
+                    <i className="fas fa-map-marked-alt"></i>
+                    <h3>No Available Plots</h3>
+                    <p>There are currently no available plots for this land.</p>
+                    <button onClick={onBack} className="primary-button">
+                      <i className="fas fa-arrow-left"></i>
+                      Back to Lands
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Error/Success Messages */}
-      {error && (
-        <div className="message error">
-          <i className="fas fa-exclamation-circle"></i>
-          {error}
-          <button onClick={() => setError('')} className="close-message">
-            <i className="fas fa-times"></i>
-          </button>
-        </div>
-      )}
-
-      {success && (
-        <div className="message success">
-          <i className="fas fa-check-circle"></i>
-          {success}
-        </div>
-      )}
-
-      <div className="booking-content">
-        {/* Available Plots Section */}
-        <div className="plots-section">
-          <div className="section-header">
-            <h2>Available Plots</h2>
-            <p>Select a plot from {land.Description}</p>
-          </div>
-
-          {plotsLoading ? (
-            <div className="loading-state">
-              <div className="loading-spinner">
-                <i className="fas fa-spinner fa-spin"></i>
-              </div>
-              <p>Loading available plots...</p>
-            </div>
-          ) : plots.length > 0 ? (
-            <div className="plots-grid">
-              {plots.map((plot, index) => (
-                <div
-                  key={index}
-                  className={`plot-card ${getStatusColor(plot['Plot Status'])}`}
-                  onClick={() => handlePlotSelect(plot)}
-                >
-                  <div className="plot-card-header">
-                    <h3 className="plot-code">{plot['Plot Code.']}</h3>
-                    <span className={`status-badge status-${getStatusColor(plot['Plot Status'])}`}>
-                      {plot['Plot Status']}
-                    </span>
-                  </div>
-
-                  <div className="plot-card-body">
-                    <div className="plot-details">
-                      <div className="detail-item">
-                        <span className="label">Area:</span>
-                        <span className="value">{plot.Area} acres</span>
-                      </div>
-                      <div className="detail-item">
-                        <span className="label">Member Price:</span>
-                        <span className="value price">{formatCurrency(plot['Member Price'])}</span>
-                      </div>
-                      <div className="detail-item">
-                        <span className="label">Non-Member:</span>
-                        <span className="value">{formatCurrency(plot['Non Member Price'])}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="plot-card-footer">
-                    {selectedPlot?.['Plot Code.'] === plot['Plot Code.'] ? (
-                      <div className="selected-indicator">
-                        <i className="fas fa-check-circle"></i>
-                        Selected for Booking
-                      </div>
-                    ) : (
-                      <button className="select-plot-button">
-                        <i className="fas fa-hand-pointer"></i>
-                        Select Plot
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="empty-state">
-              <i className="fas fa-map-marked-alt"></i>
-              <h3>No Available Plots</h3>
-              <p>There are currently no available plots for this land.</p>
-              <button onClick={onBack} className="primary-button">
-                <i className="fas fa-arrow-left"></i>
-                Back to Lands
+      {/* Payment Modal */}
+      {showPaymentModal && selectedPlot && (
+        <div className="payment-modal-overlay" onClick={handleClosePaymentModal}>
+          <div className="payment-modal-container" onClick={(e) => e.stopPropagation()}>
+            <div className="payment-modal-header">
+              <h3>Complete Payment</h3>
+              <button className="payment-close-button" onClick={handleClosePaymentModal}>
+                <i className="fas fa-times"></i>
               </button>
             </div>
-          )}
-        </div>
 
-        {/* Booking Form Section */}
-        {selectedPlot && (
-          <div className="booking-form-section">
-            <div className="form-container">
-              <div className="form-header">
-                <h2>Booking Details</h2>
-                <p>Complete the booking for {selectedPlot['Plot Code.']}</p>
-              </div>
+            <div className="payment-modal-content">
+              {/* Payment Messages */}
+              {error && (
+                <div className="message error">
+                  <i className="fas fa-exclamation-circle"></i>
+                  {error}
+                  <button onClick={() => setError('')} className="close-message">
+                    <i className="fas fa-times"></i>
+                  </button>
+                </div>
+              )}
 
-              <div className="selected-plot-summary">
+              {paymentMessage && (
+                <div className={`message payment-message ${paymentStatus}`}>
+                  <i className={`fas ${getPaymentStatusMessage().icon}`} style={{ color: getPaymentStatusMessage().color }}></i>
+                  {paymentMessage}
+                </div>
+              )}
+
+              {/* Selected Plot Summary */}
+              <div className="payment-plot-summary">
                 <div className="summary-header">
-                  <h3>Selected Plot Summary</h3>
-                  <span className="plot-badge">{selectedPlot['Plot Code.']}</span>
+                  <span className="plot-label">Selected Plot:</span>
+                  <span className="plot-code-badge">{selectedPlot.plot_code}</span>
                 </div>
                 <div className="summary-details">
                   <div className="summary-row">
-                    <span className="label">Plot Code:</span>
-                    <span className="value">{selectedPlot['Plot Code.']}</span>
+                    <span>Land:</span>
+                    <span>{land.Description}</span>
                   </div>
                   <div className="summary-row">
-                    <span className="label">Area:</span>
-                    <span className="value">{selectedPlot.Area} acres</span>
+                    <span>Area:</span>
+                    <span>{selectedPlot.area} acres</span>
                   </div>
                   <div className="summary-row">
-                    <span className="label">Member Price:</span>
-                    <span className="value price">{formatCurrency(selectedPlot['Member Price'])}</span>
-                  </div>
-                  <div className="summary-row">
-                    <span className="label">Land:</span>
-                    <span className="value">{land.Description}</span>
+                    <span>Price:</span>
+                    <span className="price">{formatCurrency(selectedPlot.non_member_price)}</span>
                   </div>
                 </div>
               </div>
 
-              <form onSubmit={handleBookingSubmit} className="booking-form">
+              {/* Payment Form */}
+              <form onSubmit={handleInitiatePayment} className="payment-form">
                 <div className="form-group">
-                  <label className="form-label">Customer Number</label>
+                  <label htmlFor="bookingDate" className="form-label">
+                    Booking Date *
+                  </label>
                   <input
-                    type="text"
-                    value={customerNo}
-                    readOnly
-                    className="form-input readonly"
+                    id="bookingDate"
+                    name="bookingDate"
+                    type="date"
+                    required
+                    value={formData.bookingDate}
+                    onChange={handleInputChange}
+                    className="form-input"
                   />
                 </div>
 
-                <div className="form-row">
-                  <div className="form-group">
-                    <label htmlFor="bookingDate" className="form-label">
-                      Booking Date *
-                    </label>
-                    <input
-                      id="bookingDate"
-                      name="bookingDate"
-                      type="date"
-                      required
-                      value={formData.bookingDate}
-                      onChange={handleInputChange}
-                      className="form-input"
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label htmlFor="bookingFee" className="form-label">
-                      Booking Fee (KSh) *
-                    </label>
-                    <input
-                      id="bookingFee"
-                      name="bookingFee"
-                      type="number"
-                      required
-                      min="0"
-                      step="1000"
-                      placeholder="Enter booking fee amount"
-                      value={formData.bookingFee}
-                      onChange={handleInputChange}
-                      className="form-input"
-                    />
-                    {selectedPlot['Member Price'] > 0 && (
-                      <div className="fee-suggestion">
-                        Suggested: {formatCurrency(selectedPlot['Member Price'])}
-                      </div>
-                    )}
-                  </div>
+                <div className="form-group">
+                  <label htmlFor="bookingFee" className="form-label">
+                    Booking Fee (KSh) *
+                  </label>
+                  <input
+                    id="bookingFee"
+                    name="bookingFee"
+                    type="number"
+                    required
+                    value={formData.bookingFee}
+                    onChange={handleInputChange}
+                    min="0"
+                    step="0.01"
+                    placeholder="Enter amount"
+                    className="form-input"
+                  />
+                  <small className="input-hint">
+                    Suggested: {formatCurrency(selectedPlot.non_member_price)}
+                  </small>
                 </div>
 
-                <div className="form-actions">
+                <div className="form-group">
+                  <label htmlFor="phoneNumber" className="form-label">
+                    M-PESA Phone Number *
+                  </label>
+                  <input
+                    id="phoneNumber"
+                    name="phoneNumber"
+                    type="tel"
+                    required
+                    value={formData.phoneNumber}
+                    onChange={handleInputChange}
+                    placeholder="e.g., 254706126213 or 0706126213"
+                    pattern="[0-9]{9,12}"
+                    title="Please enter a valid phone number (9-12 digits)"
+                    className="form-input"
+                  />
+                  <small className="input-hint">Enter the M-PESA number to pay from</small>
+                </div>
+
+                <div className="payment-info">
+                  <i className="fas fa-info-circle"></i>
+                  <p>You will receive an STK push on your phone to complete the payment.</p>
+                </div>
+
+                <div className="payment-form-actions">
                   <button
                     type="button"
-                    onClick={() => {
-                      setSelectedPlot(null);
-                      setError('');
-                      setSuccess('');
-                    }}
-                    className="secondary-button"
-                    disabled={loading}
+                    onClick={handleClosePaymentModal}
+                    className="payment-secondary-button"
+                    disabled={paymentLoading || loading}
                   >
-                    <i className="fas fa-times"></i>
-                    Change Plot
+                    Cancel
                   </button>
                   <button
                     type="submit"
-                    disabled={loading}
-                    className="primary-button"
+                    disabled={paymentLoading || loading}
+                    className="payment-primary-button"
                   >
-                    {loading ? (
+                    {paymentLoading ? (
                       <>
                         <i className="fas fa-spinner fa-spin"></i>
-                        Processing Booking...
+                        Processing...
+                      </>
+                    ) : loading ? (
+                      <>
+                        <i className="fas fa-spinner fa-spin"></i>
+                        Booking...
                       </>
                     ) : (
                       <>
-                        <i className="fas fa-map-marked-alt"></i>
-                        Confirm Booking
+                        <i className="fas fa-mobile-alt"></i>
+                        Pay & Book
                       </>
                     )}
                   </button>
@@ -377,84 +565,145 @@ const CustomerPlotBooking = ({ customerNo, land, onBookingSuccess, onBack }) => 
               </form>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       <style jsx>{`
-        .customer-plot-booking {
-          min-height: 100vh;
-          background: #f8fafc;
-          padding: 1rem;
+        /* Modal Overlay - Full screen with blur */
+        .customer-plot-booking-modal {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          z-index: 9999;
         }
 
-        .booking-header {
+        .modal-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0, 0, 0, 0.7);
+          backdrop-filter: blur(5px);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 1rem;
+          animation: fadeIn 0.3s ease;
+          z-index: 10000;
+          overflow-y: auto;
+        }
+
+        @keyframes fadeIn {
+          from {
+            opacity: 0;
+          }
+          to {
+            opacity: 1;
+          }
+        }
+
+        /* Main Modal Container */
+        .modal-container {
+          background: white;
+          border-radius: 1.5rem;
+          width: 100%;
+          max-width: 1400px;
+          max-height: 90vh;
+          overflow-y: auto;
+          box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+          animation: slideUp 0.4s ease;
+          position: relative;
+        }
+
+        @keyframes slideUp {
+          from {
+            opacity: 0;
+            transform: translateY(50px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        /* Modal Header - Sticky */
+        .modal-header {
           display: flex;
           justify-content: space-between;
           align-items: center;
+          padding: 1.5rem 2rem;
+          border-bottom: 2px solid #f3f4f6;
+          position: sticky;
+          top: 0;
           background: white;
-          padding: 1.5rem;
-          border-radius: 1rem;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-          margin-bottom: 1.5rem;
-          flex-wrap: wrap;
-          gap: 1rem;
+          z-index: 10;
+          border-radius: 1.5rem 1.5rem 0 0;
         }
 
-        .back-button {
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-          background: #6b7280;
-          color: white;
-          border: none;
-          padding: 0.75rem 1rem;
-          border-radius: 0.5rem;
-          cursor: pointer;
-          font-weight: 500;
-          transition: all 0.3s ease;
-        }
-
-        .back-button:hover {
-          background: #4b5563;
-        }
-
-        .header-content {
-          flex: 1;
-          text-align: center;
-        }
-
-        .header-content h1 {
-          margin: 0 0 0.5rem 0;
-          color: #1f2937;
-          font-size: 1.5rem;
+        .modal-title h2 {
+          font-size: 1.75rem;
           font-weight: 700;
+          color: #1f2937;
+          margin: 0 0 0.25rem 0;
         }
 
-        .header-content p {
-          margin: 0;
+        .modal-title p {
           color: #6b7280;
+          font-size: 0.95rem;
+          margin: 0;
         }
 
-        .customer-badge {
+        .close-button {
+          background: #f3f4f6;
+          border: none;
+          width: 40px;
+          height: 40px;
+          border-radius: 50%;
           display: flex;
           align-items: center;
-          gap: 0.5rem;
+          justify-content: center;
+          color: #6b7280;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          font-size: 1.1rem;
+        }
+
+        .close-button:hover {
           background: #7A1F23;
           color: white;
-          padding: 0.75rem 1rem;
-          border-radius: 0.5rem;
-          font-weight: 600;
+          transform: rotate(90deg);
         }
 
+        /* Modal Content */
+        .modal-content {
+          padding: 2rem;
+        }
+
+        /* Messages */
         .message {
           padding: 1rem 1.5rem;
           border-radius: 0.75rem;
           margin-bottom: 1.5rem;
           display: flex;
-          align-items: center;
-          gap: 0.75rem;
+          align-items: flex-start;
+          gap: 1rem;
           font-weight: 500;
           position: relative;
+          animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+          from {
+            opacity: 0;
+            transform: translateY(-10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
         }
 
         .message.error {
@@ -464,9 +713,82 @@ const CustomerPlotBooking = ({ customerNo, land, onBookingSuccess, onBack }) => 
         }
 
         .message.success {
-          background: #f0fdf4;
+          background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
           color: #166534;
           border: 1px solid #bbf7d0;
+          box-shadow: 0 4px 12px rgba(22, 101, 52, 0.1);
+        }
+
+        .success-icon {
+          font-size: 2rem;
+          color: #16a34a;
+          flex-shrink: 0;
+        }
+
+        .success-content {
+          flex: 1;
+        }
+
+        .success-title {
+          font-size: 1.25rem;
+          font-weight: 700;
+          margin-bottom: 0.5rem;
+          color: #166534;
+        }
+
+        .success-message {
+          line-height: 1.6;
+          margin-bottom: 1rem;
+          white-space: pre-line;
+        }
+
+        .notification-badges {
+          display: flex;
+          gap: 0.75rem;
+          margin-top: 0.5rem;
+          flex-wrap: wrap;
+        }
+
+        .badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.375rem;
+          padding: 0.375rem 0.75rem;
+          background: white;
+          border-radius: 2rem;
+          font-size: 0.8rem;
+          font-weight: 600;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+
+        .badge.email {
+          color: #2563eb;
+          border: 1px solid #93c5fd;
+        }
+
+        .badge.sms {
+          color: #7A1F23;
+          border: 1px solid #fecaca;
+        }
+
+        .payment-message.pending {
+          background: #FEF3C7;
+          color: #92400E;
+          border: 1px solid #FCD34D;
+        }
+
+        .payment-message.success {
+          background: #DCFCE7;
+          color: #16A34A;
+          border: 1px solid #BBF7D0;
+        }
+
+        .payment-message.cancelled,
+        .payment-message.failed,
+        .payment-message.timeout {
+          background: #FEF2F2;
+          color: #DC2626;
+          border: 1px solid #FECACA;
         }
 
         .close-message {
@@ -476,25 +798,27 @@ const CustomerPlotBooking = ({ customerNo, land, onBookingSuccess, onBack }) => 
           cursor: pointer;
           margin-left: auto;
           padding: 0.25rem;
+          opacity: 0.7;
+          transition: opacity 0.2s;
         }
 
+        .close-message:hover {
+          opacity: 1;
+        }
+
+        /* Main Layout */
         .booking-content {
-          display: grid;
-          grid-template-columns: 1fr;
-          gap: 1.5rem;
+          display: flex;
+          flex-direction: column;
+          gap: 2rem;
         }
 
-        @media (min-width: 1024px) {
-          .booking-content {
-            grid-template-columns: 1fr 1fr;
-          }
-        }
-
-        .plots-section, .booking-form-section {
-          background: white;
+        /* Plots Section */
+        .plots-section {
+          background: #f8fafc;
           border-radius: 1rem;
           padding: 1.5rem;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+          width: 100%;
         }
 
         .section-header {
@@ -502,23 +826,28 @@ const CustomerPlotBooking = ({ customerNo, land, onBookingSuccess, onBack }) => 
           text-align: center;
         }
 
-        .section-header h2 {
+        .section-header h3 {
           margin: 0 0 0.5rem 0;
           color: #1f2937;
-          font-size: 1.5rem;
-          font-weight: 700;
+          font-size: 1.3rem;
+          font-weight: 600;
         }
 
         .section-header p {
           margin: 0;
           color: #6b7280;
-          font-size: 1rem;
+          font-size: 0.95rem;
         }
 
-        /* UPDATED: Use the same grid layout as PlotModal */
-        .plots-grid {
+        .plots-grid-container {
+          display: flex;
+          flex-direction: column;
+          gap: 1.25rem;
+        }
+
+        .plots-row {
           display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+          grid-template-columns: repeat(3, 1fr);
           gap: 1.25rem;
         }
 
@@ -528,8 +857,16 @@ const CustomerPlotBooking = ({ customerNo, land, onBookingSuccess, onBack }) => 
           padding: 1.25rem;
           border: 2px solid #e5e7eb;
           transition: all 0.3s ease;
-          height: fit-content;
           cursor: pointer;
+          display: flex;
+          flex-direction: column;
+          height: 100%;
+        }
+
+        .plot-card.placeholder {
+          visibility: hidden;
+          pointer-events: none;
+          opacity: 0;
         }
 
         .plot-card.available {
@@ -542,6 +879,13 @@ const CustomerPlotBooking = ({ customerNo, land, onBookingSuccess, onBack }) => 
 
         .plot-card.sold {
           border-color: #EF4444;
+        }
+
+        .plot-card.selected {
+          border-color: #7A1F23;
+          box-shadow: 0 0 0 3px rgba(122, 31, 35, 0.2);
+          transform: translateY(-2px);
+          background: white;
         }
 
         .plot-card:hover {
@@ -592,6 +936,7 @@ const CustomerPlotBooking = ({ customerNo, land, onBookingSuccess, onBack }) => 
 
         .plot-card-body {
           margin-bottom: 1.25rem;
+          flex: 1;
         }
 
         .plot-details {
@@ -629,6 +974,7 @@ const CustomerPlotBooking = ({ customerNo, land, onBookingSuccess, onBack }) => 
         .plot-card-footer {
           display: flex;
           justify-content: center;
+          margin-top: auto;
         }
 
         .select-plot-button {
@@ -674,29 +1020,103 @@ const CustomerPlotBooking = ({ customerNo, land, onBookingSuccess, onBack }) => 
           font-size: 1.1rem;
         }
 
-        /* Rest of the CSS remains the same */
-        .form-container {
-          max-width: 100%;
-        }
-
-        .form-header {
-          margin-bottom: 1.5rem;
+        .empty-state {
           text-align: center;
-        }
-
-        .form-header h2 {
-          margin: 0 0 0.5rem 0;
-          color: #1f2937;
-          font-size: 1.5rem;
-          font-weight: 700;
-        }
-
-        .form-header p {
-          margin: 0;
+          padding: 3rem 1rem;
           color: #6b7280;
         }
 
-        .selected-plot-summary {
+        .empty-state i {
+          font-size: 3rem;
+          color: #d1d5db;
+          margin-bottom: 1rem;
+        }
+
+        .empty-state h3 {
+          font-size: 1.25rem;
+          font-weight: 600;
+          margin-bottom: 0.5rem;
+          color: #374151;
+        }
+
+        .empty-state p {
+          margin-bottom: 1.5rem;
+        }
+
+        /* Payment Modal Styles */
+        .payment-modal-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0, 0, 0, 0.75);
+          backdrop-filter: blur(8px);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 11000;
+          padding: 1rem;
+          animation: fadeIn 0.3s ease;
+        }
+
+        .payment-modal-container {
+          background: white;
+          border-radius: 1.5rem;
+          width: 100%;
+          max-width: 500px;
+          max-height: 90vh;
+          overflow-y: auto;
+          box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+          animation: slideUp 0.4s ease;
+        }
+
+        .payment-modal-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 1.5rem 2rem;
+          border-bottom: 2px solid #f3f4f6;
+          position: sticky;
+          top: 0;
+          background: white;
+          z-index: 10;
+          border-radius: 1.5rem 1.5rem 0 0;
+        }
+
+        .payment-modal-header h3 {
+          font-size: 1.5rem;
+          font-weight: 700;
+          color: #1f2937;
+          margin: 0;
+        }
+
+        .payment-close-button {
+          background: #f3f4f6;
+          border: none;
+          width: 36px;
+          height: 36px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #6b7280;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          font-size: 1rem;
+        }
+
+        .payment-close-button:hover {
+          background: #7A1F23;
+          color: white;
+          transform: rotate(90deg);
+        }
+
+        .payment-modal-content {
+          padding: 2rem;
+        }
+
+        .payment-plot-summary {
           background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
           border-radius: 1rem;
           padding: 1.5rem;
@@ -709,16 +1129,16 @@ const CustomerPlotBooking = ({ customerNo, land, onBookingSuccess, onBack }) => 
           justify-content: space-between;
           align-items: center;
           margin-bottom: 1rem;
+          flex-wrap: wrap;
+          gap: 0.5rem;
         }
 
-        .summary-header h3 {
-          margin: 0;
-          color: #1f2937;
-          font-size: 1.1rem;
+        .plot-label {
           font-weight: 600;
+          color: #374151;
         }
 
-        .plot-badge {
+        .plot-code-badge {
           background: #7A1F23;
           color: white;
           padding: 0.375rem 0.75rem;
@@ -745,39 +1165,27 @@ const CustomerPlotBooking = ({ customerNo, land, onBookingSuccess, onBack }) => 
           border-bottom: none;
         }
 
-        .summary-row .label {
+        .summary-row span:first-child {
           color: #6b7280;
           font-size: 0.875rem;
         }
 
-        .summary-row .value {
+        .summary-row span:last-child {
           color: #1f2937;
           font-weight: 500;
           font-size: 0.875rem;
         }
 
-        .summary-row .value.price {
+        .summary-row .price {
           color: #7A1F23;
           font-weight: 600;
           font-size: 1rem;
         }
 
-        .booking-form {
+        .payment-form {
           display: flex;
           flex-direction: column;
           gap: 1.25rem;
-        }
-
-        .form-row {
-          display: grid;
-          grid-template-columns: 1fr;
-          gap: 1rem;
-        }
-
-        @media (min-width: 640px) {
-          .form-row {
-            grid-template-columns: 1fr 1fr;
-          }
         }
 
         .form-group {
@@ -799,6 +1207,7 @@ const CustomerPlotBooking = ({ customerNo, land, onBookingSuccess, onBack }) => 
           font-size: 1rem;
           transition: all 0.3s ease;
           background: white;
+          width: 100%;
         }
 
         .form-input:focus {
@@ -807,31 +1216,41 @@ const CustomerPlotBooking = ({ customerNo, land, onBookingSuccess, onBack }) => 
           outline: none;
         }
 
-        .form-input.readonly {
-          background: #f9fafb;
+        .input-hint {
           color: #6b7280;
-          cursor: not-allowed;
-          border-color: #d1d5db;
+          font-size: 0.8rem;
+          margin-top: 0.25rem;
         }
 
-        .fee-suggestion {
-          margin-top: 0.5rem;
-          color: #7A1F23;
-          font-size: 0.875rem;
-          font-weight: 500;
-          background: #fef7f7;
-          padding: 0.5rem;
-          border-radius: 0.375rem;
-          text-align: center;
+        .payment-info {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+          padding: 1rem;
+          background: #EFF6FF;
+          border-radius: 0.75rem;
+          color: #1E40AF;
+          font-size: 0.9rem;
         }
 
-        .form-actions {
+        .payment-info i {
+          font-size: 1.2rem;
+          color: #3B82F6;
+          flex-shrink: 0;
+        }
+
+        .payment-info p {
+          margin: 0;
+          line-height: 1.5;
+        }
+
+        .payment-form-actions {
           display: flex;
           gap: 1rem;
-          margin-top: 1.5rem;
+          margin-top: 1rem;
         }
 
-        .secondary-button {
+        .payment-secondary-button {
           flex: 1;
           background: #6b7280;
           color: white;
@@ -847,12 +1266,12 @@ const CustomerPlotBooking = ({ customerNo, land, onBookingSuccess, onBack }) => 
           gap: 0.5rem;
         }
 
-        .secondary-button:hover:not(:disabled) {
+        .payment-secondary-button:hover:not(:disabled) {
           background: #4b5563;
           transform: translateY(-1px);
         }
 
-        .primary-button {
+        .payment-primary-button {
           flex: 2;
           background: linear-gradient(135deg, #7A1F23, #5a1519);
           color: white;
@@ -869,77 +1288,118 @@ const CustomerPlotBooking = ({ customerNo, land, onBookingSuccess, onBack }) => 
           font-size: 1rem;
         }
 
-        .primary-button:hover:not(:disabled) {
+        .payment-primary-button:hover:not(:disabled) {
           background: linear-gradient(135deg, #5a1519, #7A1F23);
           transform: translateY(-1px);
           box-shadow: 0 4px 12px rgba(122, 31, 35, 0.3);
         }
 
-        .primary-button:disabled {
+        .payment-primary-button:disabled,
+        .payment-secondary-button:disabled {
           opacity: 0.6;
           cursor: not-allowed;
           transform: none;
         }
 
-        .loading-state {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          padding: 3rem 1rem;
-          color: #6b7280;
-          text-align: center;
-        }
-
-        .loading-spinner {
-          font-size: 2rem;
-          color: #7A1F23;
-          margin-bottom: 1rem;
-        }
-
-        .empty-state {
-          text-align: center;
-          padding: 3rem 1rem;
-          color: #6b7280;
-        }
-
-        .empty-state i {
-          font-size: 3rem;
-          color: #d1d5db;
-          margin-bottom: 1rem;
-        }
-
-        .empty-state h3 {
-          font-size: 1.25rem;
-          font-weight: 600;
-          margin-bottom: 0.5rem;
-          color: #374151;
-        }
-
-        .empty-state p {
-          margin-bottom: 1.5rem;
-        }
-
         /* Responsive Design */
+        @media (max-width: 1024px) {
+          .plots-row {
+            grid-template-columns: repeat(2, 1fr);
+          }
+
+          .modal-container {
+            max-height: 95vh;
+          }
+
+          .modal-content {
+            padding: 1.5rem;
+          }
+        }
+
         @media (max-width: 768px) {
-          .booking-header {
+          .modal-header {
+            padding: 1rem 1.5rem;
+          }
+
+          .modal-title h2 {
+            font-size: 1.3rem;
+          }
+
+          .modal-content {
+            padding: 1rem;
+          }
+
+          .plots-section {
+            padding: 1rem;
+          }
+
+          .section-header h3 {
+            font-size: 1.1rem;
+          }
+
+          .plots-row {
+            grid-template-columns: 1fr;
+            gap: 1rem;
+          }
+
+          .plot-card {
+            max-width: 100%;
+          }
+
+          .payment-modal-container {
+            max-width: 90%;
+          }
+
+          .payment-modal-header h3 {
+            font-size: 1.25rem;
+          }
+
+          .payment-modal-content {
+            padding: 1.5rem;
+          }
+
+          .payment-form-actions {
+            flex-direction: column;
+          }
+
+          .payment-info {
             flex-direction: column;
             text-align: center;
           }
-
-          .form-actions {
-            flex-direction: column;
-          }
-
-          .plots-grid {
-            grid-template-columns: 1fr;
-          }
         }
 
-        /* Large screens */
-        @media (min-width: 1200px) {
-          .plots-grid {
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        @media (max-width: 480px) {
+          .modal-overlay {
+            padding: 0.5rem;
+          }
+
+          .modal-header {
+            padding: 0.875rem 1rem;
+          }
+
+          .modal-title h2 {
+            font-size: 1.2rem;
+          }
+
+          .close-button {
+            width: 36px;
+            height: 36px;
+          }
+
+          .plot-card {
+            padding: 1rem;
+          }
+
+          .plot-code {
+            font-size: 1rem;
+          }
+
+          .payment-modal-content {
+            padding: 1rem;
+          }
+
+          .payment-plot-summary {
+            padding: 1rem;
           }
         }
       `}</style>

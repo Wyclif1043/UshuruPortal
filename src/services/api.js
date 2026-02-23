@@ -11,8 +11,6 @@ const api = axios.create({
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
-    // Ngrok header to bypass free plan browser warning
-    'ngrok-skip-browser-warning': 'true'
   },
 });
 

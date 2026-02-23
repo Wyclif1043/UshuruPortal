@@ -10,7 +10,7 @@ const Investments = () => {
   const { memberNumber, profile } = useSelector((state) => state.auth);
   const [accountDetails, setAccountDetails] = useState(null);
   const [activeTab, setActiveTab] = useState('booked');
-  const [bookedPlots, setBookedPlots] = useState([]);
+  const [bookedPlots, setBookedPlots] = useState(null); // Changed from [] to null
   const [lands, setLands] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -41,23 +41,92 @@ const Investments = () => {
     }
   }, [accountDetails, memberNumber]);
 
-  const loadBookedPlots = async () => {
-    setLoading(true);
-    try {
-      const memberNo = accountDetails?.member_no || memberNumber;
-      const response = await authService.getMemberBookedPlots(memberNo);
-      if (response.success) {
-        setBookedPlots(response.bookedPlots || []);
-      } else {
-        setError('Failed to load booked plots');
-      }
-    } catch (err) {
-      setError('Error loading booked plots');
-      console.error('Error loading booked plots:', err);
-    } finally {
-      setLoading(false);
+ // src/pages/Investments.jsx
+const loadBookedPlots = async () => {
+  setLoading(true);
+  setError('');
+  try {
+    const memberNo = accountDetails?.member_no || memberNumber;
+    console.log('📞 [Investments] Fetching plots for member:', memberNo);
+    
+    if (!memberNo) {
+      console.warn('⚠️ [Investments] No member number available');
+      setBookedPlots({ 
+        success: false, 
+        data: { all_entries: [], summary: { total_entries: 0 } } 
+      });
+      return;
     }
-  };
+    
+    const response = await authService.getMemberBookedPlots(memberNo);
+    console.log('📦 [Investments] API Response:', response);
+    console.log('📊 [Investments] Response structure:', {
+      hasSuccess: response?.success,
+      hasData: response?.data !== undefined,
+      hasAllEntries: response?.data?.all_entries !== undefined,
+      allEntriesLength: response?.data?.all_entries?.length,
+      allEntriesType: typeof response?.data?.all_entries
+    });
+    
+    // FIX: Ensure we always set a valid structure
+    if (response && typeof response === 'object') {
+      if (response.success) {
+        // Success with data
+        setBookedPlots(response);
+        console.log('✅ [Investments] Plots set successfully');
+      } else {
+        // Success false but response exists
+        console.warn('⚠️ [Investments] API returned success: false', response);
+        setBookedPlots({ 
+          success: true, 
+          data: { 
+            all_entries: [], 
+            summary: { 
+              total_entries: 0,
+              empty_applications: 0,
+              confirmed_bookings: 0,
+              has_confirmed_bookings: false
+            } 
+          } 
+        });
+      }
+    } else {
+      // Invalid response format
+      console.error('❌ [Investments] Invalid response format:', response);
+      setBookedPlots({ 
+        success: true, 
+        data: { 
+          all_entries: [], 
+          summary: { 
+            total_entries: 0,
+            empty_applications: 0,
+            confirmed_bookings: 0,
+            has_confirmed_bookings: false
+          } 
+        } 
+      });
+    }
+  } catch (err) {
+    console.error('❌ [Investments] Error loading booked plots:', err);
+    setError('Error loading booked plots: ' + (err.message || 'Unknown error'));
+    // Set empty structure with error state
+    setBookedPlots({ 
+      success: false, 
+      error: err.message,
+      data: { 
+        all_entries: [], 
+        summary: { 
+          total_entries: 0,
+          empty_applications: 0,
+          confirmed_bookings: 0,
+          has_confirmed_bookings: false
+        } 
+      } 
+    });
+  } finally {
+    setLoading(false);
+  }
+};
 
   const loadLands = async () => {
     setLoading(true);
@@ -88,7 +157,9 @@ const Investments = () => {
   };
 
   const generateBookingNumber = () => {
-    const lastNumber = bookedPlots.reduce((max, plot) => {
+    // FIX: Access the actual plot data
+    const plotsArray = bookedPlots?.data?.all_entries || [];
+    const lastNumber = plotsArray.reduce((max, plot) => {
       if (plot.bookingNo && plot.bookingNo.startsWith('B')) {
         const num = parseInt(plot.bookingNo.substring(1));
         return Math.max(max, num);
@@ -98,6 +169,9 @@ const Investments = () => {
     
     return `B${String(lastNumber + 1).padStart(3, '0')}`;
   };
+
+  // Get the actual count for stats
+  const bookedPlotsCount = bookedPlots?.data?.summary?.confirmed_bookings || 0;
 
   const tabs = [
     { id: 'booked', label: 'My Booked Plots', icon: 'fas fa-map-marked-alt' },
@@ -118,7 +192,7 @@ const Investments = () => {
                 <i className="fas fa-map-marked-alt"></i>
               </div>
               <div className="stat-info">
-                <span className="stat-value">{bookedPlots.length}</span>
+                <span className="stat-value">{bookedPlotsCount}</span>
                 <span className="stat-label">Booked Plots</span>
               </div>
             </div>
@@ -173,7 +247,7 @@ const Investments = () => {
           
           {!loading && activeTab === 'booked' && (
             <BookedPlots 
-              plots={bookedPlots} 
+              plots={bookedPlots}
               onRefresh={loadBookedPlots}
               loading={loading}
             />

@@ -185,7 +185,7 @@ const PlotBooking = ({ memberNo, memberName, lands, onPlotBooked, generateBookin
             />
           </div>
 
-          <div className="form-group">
+          {/* <div className="form-group">
             <label>Booking Fee (KSh):</label>
             <input
               type="number"
@@ -197,7 +197,7 @@ const PlotBooking = ({ memberNo, memberName, lands, onPlotBooked, generateBookin
               step="0.01"
               placeholder="Enter booking fee amount"
             />
-          </div>
+          </div> */}
         </div>
 
         {message && (

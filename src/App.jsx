@@ -14,6 +14,8 @@ import CustomerBooking from './pages/CustomerBooking';
 import Sidebar from './components/layout/Sidebar';
 import PublicLayout from './components/layout/PublicLayout';
 import MembershipApplication from './pages/MembershipApplication';
+import Reports from './components/Reports';
+import Support from './components/Support';
 import './styles/globals.css';
 
 function App() {
@@ -135,14 +137,18 @@ function App() {
           element={
             <ProtectedRoute>
               <LayoutWithSidebar>
-                <div className="page-header">
-                  <h1>Reports</h1>
-                  <p>View your financial reports and statements</p>
-                </div>
-                <div className="page-content">
-                  <p>Reports content coming soon...</p>
-                </div>
+                <Reports />
               </LayoutWithSidebar>
+            </ProtectedRoute>
+          } 
+        />
+
+        //Support route
+        <Route 
+          path="/support" 
+          element={
+            <ProtectedRoute>
+              <Support />
             </ProtectedRoute>
           } 
         />
