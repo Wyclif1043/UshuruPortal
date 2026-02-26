@@ -127,7 +127,7 @@ const CustomerPlotBooking = ({ customerNo, land, plots, onBookingSuccess, onBack
 
       console.log('Initiating STK Push for customer:', paymentData);
 
-      const response = await fetch('http://127.0.0.1:8000/api/mpesa-stk-push/', {
+      const response = await fetch('http://88.99.215.90:8001/api/mpesa-stk-push/', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -191,7 +191,7 @@ const CustomerPlotBooking = ({ customerNo, land, plots, onBookingSuccess, onBack
 
       console.log('📤 Sending booking request:', bookingData);
 
-      const response = await fetch('http://127.0.0.1:8000/api/book-plot-non-member/', {
+      const response = await fetch('http://88.99.215.90:8001/api/book-plot-non-member/', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

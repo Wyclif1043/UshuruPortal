@@ -42,7 +42,7 @@ const CustomerBooking = () => {
     setError('');
     
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/get-plots-by-land/', {
+      const response = await fetch('http://88.99.215.90:8001/api/get-plots-by-land/', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

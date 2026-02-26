@@ -13,11 +13,15 @@ const PaymentModal = ({ isOpen, onClose, memberNumber, memberName, onSubmit }) =
     transaction_time: new Date().toTimeString().split(' ')[0].substring(0, 5),
     cheque_no: '',
     plot_code: '',
-    transaction_type: '7' // Default to Commitment Deposit
+    transaction_type: '0'
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [sessionID, setSessionID] = useState(null);
+  const [paymentStatus, setPaymentStatus] = useState(null);
+  const [paymentCheckInterval, setPaymentCheckInterval] = useState(null);
+  const [phoneNumber, setPhoneNumber] = useState('');
 
   // Transaction types based on Ushuru system
   const transactionTypes = [
@@ -34,18 +38,65 @@ const PaymentModal = ({ isOpen, onClose, memberNumber, memberName, onSubmit }) =
       setFormData(prev => ({
         ...prev,
         customer_no: memberNumber,
-        cheque_no: generateChequeNumber()
+        cheque_no: '' // Don't generate reference, will come from M-PESA
       }));
     }
   }, [memberNumber]);
 
-  const generateChequeNumber = () => {
-    const date = new Date();
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-    return `REF-${year}${month}${day}-${random}`;
+  useEffect(() => {
+    return () => {
+      if (paymentCheckInterval) {
+        clearInterval(paymentCheckInterval);
+      }
+    };
+  }, [paymentCheckInterval]);
+
+  // Poll for payment status
+  const startPaymentStatusPolling = (sessionId) => {
+    if (paymentCheckInterval) {
+      clearInterval(paymentCheckInterval);
+    }
+
+    const interval = setInterval(async () => {
+      try {
+        const statusResponse = await authService.checkPaymentStatus(sessionId);
+        console.log('📊 Payment status check:', statusResponse);
+
+        if (statusResponse.status === 'processed') {
+          setPaymentStatus('success');
+          setSuccess('✅ Payment processed successfully!');
+          
+          // Get the M-PESA reference from the response
+          const mpesaReference = statusResponse.transaction_ref || statusResponse.booking_result?.transactionReferenceNo;
+          
+          setTimeout(() => {
+            onSubmit && onSubmit({
+              ...statusResponse.booking_result,
+              mpesa_reference: mpesaReference
+            });
+            onClose();
+          }, 2000);
+          
+          clearInterval(interval);
+          setPaymentCheckInterval(null);
+        } else if (statusResponse.payment_status === 'failed') {
+          setPaymentStatus('failed');
+          setError(statusResponse.result_desc || 'Payment failed');
+          clearInterval(interval);
+          setPaymentCheckInterval(null);
+        }
+        // Keep polling if still pending
+      } catch (err) {
+        console.error('❌ Error checking payment status:', err);
+        // Don't clear interval on error, just log
+      }
+    }, 3000); // Poll every 3 seconds
+
+    setPaymentCheckInterval(interval);
+  };
+
+  const generateSessionId = () => {
+    return 'REC' + Math.random().toString(36).substring(2, 12).toUpperCase();
   };
 
   const handleInputChange = (e) => {
@@ -54,9 +105,12 @@ const PaymentModal = ({ isOpen, onClose, memberNumber, memberName, onSubmit }) =
       ...prev,
       [name]: value
     }));
-    // Clear messages when user starts typing
     setError('');
     setSuccess('');
+  };
+
+  const handlePhoneNumberChange = (e) => {
+    setPhoneNumber(e.target.value);
   };
 
   const handleSubmit = async (e) => {
@@ -79,39 +133,80 @@ const PaymentModal = ({ isOpen, onClose, memberNumber, memberName, onSubmit }) =
       if (!formData.transaction_time) {
         throw new Error('Transaction time is required');
       }
+      if (!phoneNumber) {
+        throw new Error('Phone number is required for M-PESA payment');
+      }
 
-      // Prepare payment data
+      // Validate plot code for Land Payment, Land Booking Fee, and Commitment Deposit
+      const requiresPlotCode = ['1', '6', '7'].includes(formData.transaction_type);
+      if (requiresPlotCode && !formData.plot_code) {
+        const typeName = transactionTypes.find(t => t.value === formData.transaction_type)?.label || 'This transaction';
+        throw new Error(`Plot code is required for ${typeName}`);
+      }
+
+      // Format phone number
+      let formattedPhone = phoneNumber.trim();
+      if (formattedPhone.startsWith('0')) {
+        formattedPhone = '254' + formattedPhone.substring(1);
+      } else if (formattedPhone.startsWith('7')) {
+        formattedPhone = '254' + formattedPhone;
+      } else if (!formattedPhone.startsWith('254')) {
+        formattedPhone = '254' + formattedPhone;
+      }
+
+      if (formattedPhone.length !== 12) {
+        throw new Error('Please enter a valid Safaricom number (e.g., 254706126213 or 0706126213)');
+      }
+
+      // Generate session ID
+      const newSessionID = generateSessionId();
+      setSessionID(newSessionID);
+
+      // Prepare payment data for STK push - DON'T generate cheque_no, let callback provide M-PESA reference
       const paymentData = {
-        customer_no: formData.customer_no,
+        phonenumber: formattedPhone,
         amount: parseFloat(formData.amount).toFixed(2),
-        cheque_date: formData.cheque_date,
-        transaction_time: formData.transaction_time,
-        cheque_no: formData.cheque_no || generateChequeNumber(),
-        plot_code: formData.plot_code || '',
-        transaction_type: formData.transaction_type
+        accno: formData.customer_no,
+        transactionType: "Receipt",
+        orgCode: "68",
+        bookingType: "receipt",
+        receiptData: {
+          customer_no: formData.customer_no,
+          amount: parseFloat(formData.amount).toFixed(2),
+          cheque_date: formData.cheque_date,
+          transaction_time: formData.transaction_time,
+          cheque_no: '', // Empty - will be filled by callback with M-PESA reference
+          plot_code: formData.plot_code || '',
+          transaction_type: formData.transaction_type
+        }
       };
 
-      console.log('💰 Processing payment:', paymentData);
+      console.log('💰 Initiating payment:', paymentData);
 
-      // Call the API
-      const response = await authService.processGeneralReceipt(paymentData);
+      // Call the STK push API
+      const response = await authService.initiateSTKPush(paymentData);
       
-      if (response.success) {
-        setSuccess('Payment processed successfully!');
-        setTimeout(() => {
-          onSubmit && onSubmit(response.data);
-          onClose();
-        }, 2000);
+      if (response.ResultCode === "0") {
+        setPaymentStatus('pending');
+        setSuccess('STK push sent. Please check your phone and enter PIN to complete payment.');
+        
+        // Start polling for payment status
+        startPaymentStatusPolling(response.sessionID || newSessionID);
       } else {
-        throw new Error(response.message || 'Payment failed');
+        throw new Error(response.ResultDesc || 'Failed to initiate payment');
       }
     } catch (err) {
       console.error('❌ Payment error:', err);
       setError(err.message || 'Failed to process payment');
+      setPaymentStatus('failed');
     } finally {
       setLoading(false);
     }
   };
+
+  // Check if plot code is required based on transaction type (includes Commitment Deposit)
+  const isPlotCodeRequired = ['1', '6', '7'].includes(formData.transaction_type);
+  const showPlotCodeField = isPlotCodeRequired || formData.plot_code;
 
   if (!isOpen) return null;
 
@@ -119,7 +214,7 @@ const PaymentModal = ({ isOpen, onClose, memberNumber, memberName, onSubmit }) =
     <div className="payment-modal-overlay" onClick={onClose}>
       <div className="payment-modal" onClick={(e) => e.stopPropagation()}>
         <div className="payment-modal-header">
-          <h2>Make Payment</h2>
+          <h2>{paymentStatus === 'pending' ? 'Payment Status' : 'Make Payment'}</h2>
           <button className="close-button" onClick={onClose}>
             <i className="fas fa-times"></i>
           </button>
@@ -140,149 +235,184 @@ const PaymentModal = ({ isOpen, onClose, memberNumber, memberName, onSubmit }) =
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="payment-form">
-            {/* Customer Number (Read-only) */}
-            <div className="payment-form-group">
-              <label>Customer Number</label>
-              <input
-                type="text"
-                name="customer_no"
-                value={formData.customer_no}
-                onChange={handleInputChange}
-                readOnly
-                className="readonly-input"
-              />
+          {paymentStatus === 'pending' ? (
+            <div className="payment-status-container">
+              <div className="payment-status-pending">
+                <i className="fas fa-spinner fa-pulse fa-3x"></i>
+                <h3>Waiting for Payment Confirmation</h3>
+                <p>Please check your phone and enter your M-PESA PIN to complete the payment.</p>
+                <div className="payment-details">
+                  <p><strong>Amount:</strong> KSh {formData.amount}</p>
+                  <p><strong>Phone:</strong> {phoneNumber}</p>
+                  {formData.plot_code && <p><strong>Plot Code:</strong> {formData.plot_code}</p>}
+                </div>
+                <div className="payment-timer">
+                  <i className="fas fa-hourglass-half"></i>
+                  <span>Processing... Do not close this window</span>
+                </div>
+              </div>
             </div>
-
-            {/* Transaction Type */}
-            <div className="payment-form-group">
-              <label>Transaction Type *</label>
-              <select
-                name="transaction_type"
-                value={formData.transaction_type}
-                onChange={handleInputChange}
-                required
-                className="payment-select"
-              >
-                {transactionTypes.map(type => (
-                  <option key={type.value} value={type.value}>
-                    {type.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Amount */}
-            <div className="payment-form-group">
-              <label>Amount (KSh) *</label>
-              <input
-                type="number"
-                name="amount"
-                value={formData.amount}
-                onChange={handleInputChange}
-                placeholder="Enter amount"
-                min="1"
-                step="0.01"
-                required
-              />
-            </div>
-
-            {/* Date and Time Row */}
-            <div className="payment-form-row">
+          ) : (
+            <form onSubmit={handleSubmit} className="payment-form">
+              {/* Customer Number (Read-only) */}
               <div className="payment-form-group">
-                <label>Date *</label>
+                <label>Customer Number</label>
                 <input
-                  type="date"
-                  name="cheque_date"
-                  value={formData.cheque_date}
+                  type="text"
+                  name="customer_no"
+                  value={formData.customer_no}
                   onChange={handleInputChange}
+                  readOnly
+                  className="readonly-input"
+                />
+              </div>
+
+              {/* Phone Number */}
+              <div className="payment-form-group">
+                <label>M-PESA Phone Number *</label>
+                <input
+                  type="tel"
+                  value={phoneNumber}
+                  onChange={handlePhoneNumberChange}
+                  placeholder="e.g., 254706126213 or 0706126213"
+                  required
+                  pattern="[0-9]{9,12}"
+                  title="Please enter a valid phone number (9-12 digits)"
+                />
+                <small className="input-hint">Enter the M-PESA number to pay from</small>
+              </div>
+
+              {/* Transaction Type */}
+              <div className="payment-form-group">
+                <label>Transaction Type *</label>
+                <select
+                  name="transaction_type"
+                  value={formData.transaction_type}
+                  onChange={handleInputChange}
+                  required
+                  className="payment-select"
+                >
+                  {transactionTypes.map(type => (
+                    <option key={type.value} value={type.value}>
+                      {type.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Amount */}
+              <div className="payment-form-group">
+                <label>Amount (KSh) *</label>
+                <input
+                  type="number"
+                  name="amount"
+                  value={formData.amount}
+                  onChange={handleInputChange}
+                  placeholder="Enter amount"
+                  min="1"
+                  step="0.01"
                   required
                 />
               </div>
 
-              <div className="payment-form-group">
-                <label>Time *</label>
-                <input
-                  type="time"
-                  name="transaction_time"
-                  value={formData.transaction_time}
-                  onChange={handleInputChange}
-                  required
-                />
+              {/* Date and Time Row */}
+              <div className="payment-form-row">
+                <div className="payment-form-group">
+                  <label>Date *</label>
+                  <input
+                    type="date"
+                    name="cheque_date"
+                    value={formData.cheque_date}
+                    onChange={handleInputChange}
+                    required
+                  />
+                </div>
+
+                <div className="payment-form-group">
+                  <label>Time *</label>
+                  <input
+                    type="time"
+                    name="transaction_time"
+                    value={formData.transaction_time}
+                    onChange={handleInputChange}
+                    required
+                  />
+                </div>
               </div>
-            </div>
 
-            {/* Reference Number */}
-            <div className="payment-form-group">
-              <label>Reference Number</label>
-              <input
-                type="text"
-                name="cheque_no"
-                value={formData.cheque_no}
-                onChange={handleInputChange}
-                placeholder="Auto-generated if empty"
-              />
-              <small className="input-hint">Leave empty for auto-generation</small>
-            </div>
+              {/* Plot Code - Required for Land Payment, Land Booking Fee, and Commitment Deposit */}
+              {showPlotCodeField && (
+                <div className="payment-form-group plot-code-field">
+                  <label>
+                    Plot Code {isPlotCodeRequired ? '*' : '(Optional)'}
+                    {isPlotCodeRequired && <span className="required-badge">Required</span>}
+                  </label>
+                  <input
+                    type="text"
+                    name="plot_code"
+                    value={formData.plot_code}
+                    onChange={handleInputChange}
+                    placeholder="Enter plot code"
+                    required={isPlotCodeRequired}
+                    className={isPlotCodeRequired ? 'required-input' : ''}
+                  />
+                  {isPlotCodeRequired && (
+                    <small className="input-hint warning">
+                      <i className="fas fa-exclamation-triangle"></i>
+                      Plot code is required for {transactionTypes.find(t => t.value === formData.transaction_type)?.label}
+                    </small>
+                  )}
+                </div>
+              )}
 
-            {/* Plot Code (Optional) */}
-            <div className="payment-form-group">
-              <label>Plot Code (Optional)</label>
-              <input
-                type="text"
-                name="plot_code"
-                value={formData.plot_code}
-                onChange={handleInputChange}
-                placeholder="Enter plot code if applicable"
-              />
-              <small className="input-hint">Required for Land Payment type</small>
-            </div>
-
-            {/* Payment Instructions */}
-            <div className="payment-instructions">
-              <i className="fas fa-info-circle"></i>
-              <div>
-                <strong>Payment Instructions:</strong>
-                <ul>
-                  <li>Ensure all required fields are filled correctly</li>
-                  <li>The reference number will be generated automatically if not provided</li>
-                  <li>Plot code is required for Land Payment transactions</li>
-                </ul>
+              {/* Payment Instructions */}
+              <div className="payment-instructions">
+                <i className="fas fa-info-circle"></i>
+                <div>
+                  <strong>Payment Instructions:</strong>
+                  <ul>
+                    <li>You will receive an STK push on your phone</li>
+                    <li>Enter your M-PESA PIN to authorize the payment</li>
+                    <li>Do not close this window while processing</li>
+                    <li>The M-PESA transaction ID will be used as reference number</li>
+                  </ul>
+                </div>
               </div>
-            </div>
 
-            {/* Form Actions */}
-            <div className="payment-form-actions">
-              <button
-                type="button"
-                className="payment-cancel-btn"
-                onClick={onClose}
-                disabled={loading}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="payment-submit-btn"
-                disabled={loading}
-              >
-                {loading ? (
-                  <>
-                    <i className="fas fa-spinner fa-spin"></i>
-                    Processing...
-                  </>
-                ) : (
-                  <>
-                    <i className="fas fa-credit-card"></i>
-                    Process Payment
-                  </>
-                )}
-              </button>
-            </div>
-          </form>
+              {/* Form Actions */}
+              <div className="payment-form-actions">
+                <button
+                  type="button"
+                  className="payment-cancel-btn"
+                  onClick={onClose}
+                  disabled={loading}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="payment-submit-btn"
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <>
+                      <i className="fas fa-spinner fa-spin"></i>
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <i className="fas fa-credit-card"></i>
+                      Pay with M-PESA
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          )}
         </div>
       </div>
 
+      {/* ADD THIS CSS FOR THE PAYMENT MODAL */}
       <style jsx>{`
         .payment-modal-overlay {
           position: fixed;
@@ -386,16 +516,73 @@ const PaymentModal = ({ isOpen, onClose, memberNumber, memberName, onSubmit }) =
         }
 
         .payment-success {
-          background: #dcfce7;
-          color: #166534;
+          background: #10B981;
+          color: white;
           padding: 1rem;
           border-radius: 0.75rem;
           margin-bottom: 1.5rem;
           display: flex;
           align-items: center;
           gap: 0.75rem;
-          border: 1px solid #bbf7d0;
+          border: 1px solid #059669;
           font-size: 0.875rem;
+          font-weight: 500;
+          box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
+        }
+
+        .payment-success i {
+          font-size: 1.25rem;
+        }
+
+        .payment-status-container {
+          text-align: center;
+          padding: 2rem 1rem;
+        }
+
+        .payment-status-pending {
+          color: #F59E0B;
+        }
+
+        .payment-status-pending i {
+          margin-bottom: 1rem;
+        }
+
+        .payment-status-pending h3 {
+          color: #1f2937;
+          margin-bottom: 1rem;
+        }
+
+        .payment-status-pending p {
+          color: #6b7280;
+          margin-bottom: 1.5rem;
+        }
+
+        .payment-details {
+          background: #f9fafb;
+          padding: 1rem;
+          border-radius: 0.75rem;
+          margin: 1.5rem 0;
+          text-align: left;
+        }
+
+        .payment-details p {
+          margin: 0.5rem 0;
+          color: #374151;
+        }
+
+        .payment-timer {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.5rem;
+          color: #7A1F23;
+          font-size: 0.875rem;
+          font-weight: 500;
+          padding: 1rem;
+          background: white;
+          border-radius: 8px;
+          border: 1px dashed #7A1F23;
+          margin-top: 1rem;
         }
 
         .payment-form {
@@ -420,6 +607,19 @@ const PaymentModal = ({ isOpen, onClose, memberNumber, memberName, onSubmit }) =
           color: #374151;
           margin-bottom: 0.5rem;
           font-size: 0.9rem;
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          flex-wrap: wrap;
+        }
+
+        .required-badge {
+          background: #7A1F23;
+          color: white;
+          padding: 0.2rem 0.5rem;
+          border-radius: 1rem;
+          font-size: 0.7rem;
+          font-weight: 500;
         }
 
         .payment-form-group input,
@@ -438,6 +638,16 @@ const PaymentModal = ({ isOpen, onClose, memberNumber, memberName, onSubmit }) =
           border-color: #7A1F23;
           box-shadow: 0 0 0 3px rgba(122, 31, 35, 0.1);
           outline: none;
+        }
+
+        .payment-form-group input.required-input {
+          border-color: #F59E0B;
+          background: #FFFBEB;
+        }
+
+        .payment-form-group input.required-input:focus {
+          border-color: #F59E0B;
+          box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.1);
         }
 
         .payment-form-group input.readonly-input {
@@ -460,6 +670,29 @@ const PaymentModal = ({ isOpen, onClose, memberNumber, memberName, onSubmit }) =
           color: #6b7280;
           font-size: 0.75rem;
           margin-top: 0.25rem;
+        }
+
+        .input-hint.warning {
+          color: #F59E0B;
+        }
+
+        .input-hint.warning i {
+          margin-right: 0.25rem;
+        }
+
+        .plot-code-field {
+          animation: slideDown 0.3s ease;
+        }
+
+        @keyframes slideDown {
+          from {
+            opacity: 0;
+            transform: translateY(-10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
         }
 
         .payment-instructions {
@@ -591,6 +824,7 @@ const PaymentModal = ({ isOpen, onClose, memberNumber, memberName, onSubmit }) =
   );
 };
 
+// Rest of your Dashboard component remains exactly the same...
 const Dashboard = () => {
   const { memberNumber, profile } = useSelector((state) => state.auth);
   const [accountStatistics, setAccountStatistics] = useState(null);
@@ -626,7 +860,7 @@ const Dashboard = () => {
   }, [memberNumber]);
 
   const handlePaymentSuccess = (paymentData) => {
-    // Add to payment history
+    // Add to payment history with M-PESA reference
     setPaymentHistory(prev => [paymentData, ...prev].slice(0, 10));
     setShowPaymentHistory(true);
     
@@ -778,7 +1012,7 @@ const Dashboard = () => {
               </div>
             </div>
 
-            {/* Quick Actions Card - UPDATED with Payment button */}
+            {/* Quick Actions Card */}
             <div className="dashboard-card quick-actions-card">
               <div className="card-header">
                 <div className="card-icon">
@@ -841,7 +1075,7 @@ const Dashboard = () => {
                             KSh {formatCurrency(payment.amount)}
                           </div>
                           <div className="payment-history-details">
-                            Ref: {payment.cheque_no} | Type: {
+                            Ref: {payment.mpesa_reference || payment.cheque_no || 'N/A'} | Type: {
                               payment.transaction_type === '1' ? 'Land Payment' :
                               payment.transaction_type === '2' ? 'Share Capital' :
                               payment.transaction_type === '3' ? 'Deposit' :
@@ -979,6 +1213,7 @@ const Dashboard = () => {
         )}
       </div>
 
+      {/* Original Dashboard CSS - Completely preserved */}
       <style jsx>{`
         .dashboard-container {
           min-height: 100vh;

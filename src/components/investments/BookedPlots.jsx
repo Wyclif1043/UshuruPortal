@@ -768,9 +768,9 @@ const BookedPlots = ({ plots, loading, onRefresh }) => {
                                   <i className="fas fa-file-signature"></i> Generate Plan
                                 </button>
                                 
-                                {/* View Payment Plan Button */}
+                                {/* View Payment Plan Button - Now matches Generate Plan */}
                                 <button 
-                                  className="btn-outline btn-sm"
+                                  className="btn-primary btn-sm"
                                   onClick={() => handleViewPaymentPlan(plot.plot_code)}
                                   disabled={pdfLoading}
                                 >
@@ -787,9 +787,9 @@ const BookedPlots = ({ plots, loading, onRefresh }) => {
                                   </button>
                                 )}
 
-                                {/* Payment Button - Always visible */}
+                                {/* Payment Button - Now matches Generate Plan */}
                                 <button 
-                                  className="btn-success btn-sm"
+                                  className="btn-primary btn-sm"
                                   onClick={() => handleOpenPaymentModal(plot)}
                                 >
                                   <i className="fas fa-credit-card"></i> Make Payment

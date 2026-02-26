@@ -50,7 +50,7 @@ export const authService = {
     return response.data;
   },
 
-  // Get member account statistics (NEW METHOD)
+  // Get member account statistics
   getMemberAccountStatistics: async (username) => {
     try {
       console.log('📊 Getting member account statistics');
@@ -103,51 +103,44 @@ export const authService = {
     return response.data;
   },
 
-  // services/authService.js - Add these methods
+  // Initiate STK Push
+  initiateSTKPush: async (paymentData) => {
+    try {
+      console.log('💰 Initiating STK Push with data:', paymentData);
+      const response = await api.post('/mpesa-stk-push/', paymentData);
+      console.log('✅ STK Push response:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('❌ STK Push error:', error.response?.data || error.message);
+      throw error;
+    }
+  },
 
-// Initiate STK Push
-initiateSTKPush: async (paymentData) => {
-  try {
-    console.log('💰 Initiating STK Push:', paymentData);
-    const response = await api.post('/mpesa-stk-push/', paymentData);
-    console.log('✅ STK Push response:', response.data);
-    return response.data;
-  } catch (error) {
-    console.error('❌ STK Push error:', error.response?.data || error.message);
-    throw error;
-  }
-},
+  // Check Payment Status
+  checkPaymentStatus: async (sessionID) => {
+    try {
+      console.log('🔄 Checking payment status for session:', sessionID);
+      const response = await api.get(`/payment-status/?sessionID=${sessionID}`);
+      console.log('✅ Payment status response:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Payment status check error:', error.response?.data || error.message);
+      throw error;
+    }
+  },
 
-processGeneralReceipt: async (paymentData) => {
-  try {
-    const response = await fetch('http://127.0.0.1:8000/api/general-receipts/', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(paymentData)
-    });
-
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error('Error processing general receipt:', error);
-    throw error;
-  }
-},
-
-// Check payment status
-checkPaymentStatus: async (bookingNo, phoneNumber) => {
-  try {
-    console.log('🔄 Checking payment status for:', { bookingNo, phoneNumber });
-    const response = await api.get(`/mpesa-payment-status/?bookingNo=${bookingNo}&phoneNumber=${phoneNumber}`);
-    console.log('✅ Payment status response:', response.data);
-    return response.data;
-  } catch (error) {
-    console.error('❌ Payment status check error:', error.response?.data || error.message);
-    throw error;
-  }
-},
+  // Process General Receipt
+  processGeneralReceipt: async (receiptData) => {
+    try {
+      console.log('📄 Processing general receipt with data:', receiptData);
+      const response = await api.post('/general-receipts/', receiptData);
+      console.log('✅ General receipt response:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('❌ General receipt error:', error.response?.data || error.message);
+      throw error;
+    }
+  },
 
   // Create customer
   createCustomer: async (customerData) => {
@@ -161,7 +154,7 @@ checkPaymentStatus: async (bookingNo, phoneNumber) => {
     return response.data;
   },
 
-  // Submit membership application (UPDATED for new SOAP API)
+  // Submit membership application
   submitMembershipApplication: async (applicationData) => {
     try {
       console.log('📝 Submitting membership application to new SOAP API');
@@ -212,5 +205,4 @@ checkPaymentStatus: async (bookingNo, phoneNumber) => {
       }
     }
   }
-  
 };

@@ -8,12 +8,13 @@ const PlotModal = ({ land, memberNo, memberName, onClose, onPlotBooked, generate
   const [loadingError, setLoadingError] = useState(null);
   const [selectedPlot, setSelectedPlot] = useState(null);
   const [showBookingForm, setShowBookingForm] = useState(false);
-  const [showPaymentForm, setShowPaymentForm] = useState(false);
+  const [showPaymentStatus, setShowPaymentStatus] = useState(false);
   const [bookingLoading, setBookingLoading] = useState(false);
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [paymentMessage, setPaymentMessage] = useState('');
   const [paymentStatus, setPaymentStatus] = useState(null);
+  const [sessionID, setSessionID] = useState(null);
   const [paymentCheckInterval, setPaymentCheckInterval] = useState(null);
   const [formData, setFormData] = useState({
     bookingNo: '',
@@ -22,7 +23,7 @@ const PlotModal = ({ land, memberNo, memberName, onClose, onPlotBooked, generate
     bookingFee: '',
     phoneNumber: memberNo || '',
     transactionReferenceNo: '',
-    memberNo: memberNo || '' // Added memberNo to formData
+    memberNo: memberNo || ''
   });
 
   useEffect(() => {
@@ -32,9 +33,7 @@ const PlotModal = ({ land, memberNo, memberName, onClose, onPlotBooked, generate
       
       try {
         console.log('🔍 Loading plots for land:', land);
-        console.log('🔍 Land Code being sent:', land['Land Code']);
         
-        // Validate land code
         if (!land || !land['Land Code']) {
           throw new Error('Invalid land data: Missing Land Code');
         }
@@ -44,19 +43,12 @@ const PlotModal = ({ land, memberNo, memberName, onClose, onPlotBooked, generate
         
         if (response && response.success) {
           setPlots(response.plots || []);
-          console.log(`✅ Loaded ${response.plots?.length || 0} plots`);
         } else {
           throw new Error(response?.message || 'Failed to load plots');
         }
       } catch (err) {
         console.error('❌ Error loading plots:', err);
         setLoadingError(err.message || 'Failed to load plots. Please try again.');
-        
-        // For development/testing, you can use mock data
-        if (process.env.NODE_ENV === 'development') {
-          console.log('🔄 Using mock data for development');
-          setPlots(getMockPlots());
-        }
       } finally {
         setLoading(false);
       }
@@ -64,20 +56,6 @@ const PlotModal = ({ land, memberNo, memberName, onClose, onPlotBooked, generate
 
     loadPlots();
   }, [land]);
-
-  // Mock data function for development
-  const getMockPlots = () => {
-    return Array.from({ length: 10 }, (_, i) => ({
-      land_code: land?.['Land Code'] || 'L008',
-      plot_code: `VK-${String(i + 1).padStart(3, '0')}`,
-      description: "",
-      area: "0.05",
-      plot_status: i < 3 ? "Booked" : "Available",
-      member_price: "1500000",
-      non_member_price: "2000000",
-      owned_by: "0"
-    }));
-  };
 
   useEffect(() => {
     return () => {
@@ -87,16 +65,54 @@ const PlotModal = ({ land, memberNo, memberName, onClose, onPlotBooked, generate
     };
   }, [paymentCheckInterval]);
 
-  // Parse price: converts "1,500,000" to 1500000
+  // Poll for payment status
+  const startPaymentStatusPolling = (sessionId) => {
+    if (paymentCheckInterval) {
+      clearInterval(paymentCheckInterval);
+    }
+
+    const interval = setInterval(async () => {
+      try {
+        const statusResponse = await authService.checkPaymentStatus(sessionId);
+        console.log('📊 Payment status check:', statusResponse);
+
+        if (statusResponse.status === 'processed') {
+          // Payment successful and booking processed
+          setPaymentStatus('success');
+          setPaymentMessage('Payment successful! Plot booking completed.');
+          
+          if (statusResponse.booking_result?.success) {
+            setMessage('Plot booked successfully!');
+            setTimeout(() => {
+              onPlotBooked();
+            }, 1500);
+          }
+          
+          clearInterval(interval);
+          setPaymentCheckInterval(null);
+        } else if (statusResponse.payment_status === 'failed') {
+          setPaymentStatus('failed');
+          setPaymentMessage(statusResponse.result_desc || 'Payment failed');
+          clearInterval(interval);
+          setPaymentCheckInterval(null);
+        }
+        // Keep polling if still pending
+      } catch (err) {
+        console.error('❌ Error checking payment status:', err);
+        // Don't clear interval on error, just log
+      }
+    }, 3000); // Poll every 3 seconds
+
+    setPaymentCheckInterval(interval);
+  };
+
   const parsePrice = (value) => {
     if (!value && value !== 0) return 0;
-    // Remove commas and convert to number
     const cleaned = String(value).replace(/,/g, '');
     const parsed = parseFloat(cleaned);
     return isNaN(parsed) ? 0 : parsed;
   };
 
-  // Format currency: converts 1500000 to "KES 1,500,000"
   const formatCurrency = (amount) => {
     const numericAmount = parsePrice(amount);
     if (numericAmount === 0) return 'KES 0';
@@ -112,15 +128,14 @@ const PlotModal = ({ land, memberNo, memberName, onClose, onPlotBooked, generate
   const handleBookPlot = (plot) => {
     setSelectedPlot(plot);
     const parsedPrice = parsePrice(plot.member_price);
-    console.log('💰 Plot price:', plot.member_price, '→ parsed:', parsedPrice);
     
     setFormData(prev => ({
       ...prev,
       bookingNo: generateBookingNumber(),
       buyerName: memberName || '',
-      bookingFee: parsedPrice, // Store as clean number
+      bookingFee: parsedPrice,
       phoneNumber: memberNo || '',
-      memberNo: memberNo || '' // Ensure memberNo is included
+      memberNo: memberNo || ''
     }));
     setShowBookingForm(true);
     setMessage('');
@@ -149,69 +164,53 @@ const PlotModal = ({ land, memberNo, memberName, onClose, onPlotBooked, generate
         formattedPhone = '254' + phoneNumber;
       }
 
-      // Validate phone number length (254 + 9 digits)
       if (formattedPhone.length !== 12) {
         throw new Error('Please enter a valid Safaricom number (e.g., 254706126213 or 0706126213)');
       }
 
-      // Validate member number
       if (!formData.memberNo && !memberNo) {
         throw new Error('Member number is required');
       }
 
       const finalMemberNo = formData.memberNo || memberNo;
 
-      console.log('📱 Payment data:', {
-        sessionID: generateSessionId(),
-        phonenumber: formattedPhone,
-        amount: formData.bookingFee,
-        memberNo: finalMemberNo, // Include member number
-        accno: finalMemberNo || formattedPhone, // Use member number as account number
-        landCode: land['Land Code'],
-        plotCode: selectedPlot.plot_code
-      });
+      // Generate session ID
+      const newSessionID = generateSessionId();
+      setSessionID(newSessionID);
 
       const paymentData = {
-        sessionID: generateSessionId(),
         phonenumber: formattedPhone,
-        amount: formData.bookingFee, // Already a clean number
-        memberNo: finalMemberNo, // Include member number
+        amount: formData.bookingFee,
         accno: finalMemberNo || formattedPhone,
         transactionType: "LandDeposit",
         orgCode: "68",
-        landCode: land['Land Code'],
-        plotCode: selectedPlot.plot_code
+        bookingType: "member", // Identifies this as member booking
+        bookingData: {
+          memberNo: finalMemberNo,
+          landCode: land['Land Code'],
+          plotCode: selectedPlot.plot_code,
+          bookingDate: formData.bookingDate,
+          buyerName: formData.buyerName,
+          phoneNumber: formattedPhone
+        }
       };
+
+      console.log('📱 Initiating STK Push:', paymentData);
 
       const response = await authService.initiateSTKPush(paymentData);
       console.log('✅ STK Push response:', response);
 
       if (response.ResultCode === "0") {
-        setPaymentMessage('Payment successful! Proceeding with plot booking...');
-        setPaymentStatus('success');
-
-        const transactionRef = response.TransactionID || `MPESA${Date.now()}`;
-        setFormData(prev => ({
-          ...prev,
-          transactionReferenceNo: transactionRef
-        }));
-
-        setTimeout(async () => {
-          await handleBookingSubmit(null, transactionRef);
-        }, 1500);
-
-      } else if (response.ResultCode === "1032") {
-        setPaymentMessage('Transaction cancelled by user');
-        setPaymentStatus('cancelled');
-      } else if (response.ResultCode === "1037") {
-        setPaymentMessage('Transaction timeout. Please try again.');
-        setPaymentStatus('timeout');
-      } else if (response.ResultCode === "1") {
-        setPaymentMessage('Insufficient balance. Please top up and try again.');
-        setPaymentStatus('failed');
+        setPaymentStatus('pending');
+        setPaymentMessage('STK push sent. Please check your phone and enter PIN.');
+        setShowBookingForm(false);
+        setShowPaymentStatus(true);
+        
+        // Start polling for payment status using the sessionID from response
+        startPaymentStatusPolling(response.sessionID || newSessionID);
       } else {
-        setPaymentMessage(response.ResultDesc || 'Payment failed');
         setPaymentStatus('failed');
+        setPaymentMessage(response.ResultDesc || 'Failed to initiate payment');
       }
     } catch (err) {
       console.error('❌ Payment initiation error:', err);
@@ -222,58 +221,6 @@ const PlotModal = ({ land, memberNo, memberName, onClose, onPlotBooked, generate
     }
   };
 
-  const handleBookingSubmit = async (e, transactionRef = null) => {
-    if (e) e.preventDefault();
-
-    if (!transactionRef && paymentStatus !== 'success') {
-      setMessage('Please complete payment first');
-      return;
-    }
-
-    setBookingLoading(true);
-    setMessage('');
-
-    try {
-      // Validate required fields
-      if (!memberNo && !formData.memberNo) {
-        throw new Error('Member number is required');
-      }
-
-      const bookingData = {
-        memberNo: memberNo || formData.memberNo,
-        landCode: land['Land Code'],
-        plotCode: selectedPlot.plot_code,
-        bookingDate: formData.bookingDate,
-        buyerName: formData.buyerName,
-        bookingFeePaid: parseFloat(formData.bookingFee),
-        transactionReferenceNo: transactionRef || formData.transactionReferenceNo,
-        phoneNumber: formData.phoneNumber
-      };
-
-      console.log('📝 Booking data:', bookingData);
-
-      const response = await authService.bookPlot(bookingData);
-
-      if (response.success) {
-        setMessage('Plot booked successfully!');
-        if (paymentCheckInterval) {
-          clearInterval(paymentCheckInterval);
-          setPaymentCheckInterval(null);
-        }
-        setTimeout(() => {
-          onPlotBooked();
-        }, 1500);
-      } else {
-        setMessage(response.error || 'Failed to book plot');
-      }
-    } catch (err) {
-      console.error('❌ Booking error:', err);
-      setMessage(err.response?.data?.error || 'Error booking plot');
-    } finally {
-      setBookingLoading(false);
-    }
-  };
-
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
@@ -281,7 +228,7 @@ const PlotModal = ({ land, memberNo, memberName, onClose, onPlotBooked, generate
 
   const handleBackToPlots = () => {
     setShowBookingForm(false);
-    setShowPaymentForm(false);
+    setShowPaymentStatus(false);
     setPaymentStatus(null);
     setPaymentMessage('');
     setMessage('');
@@ -311,12 +258,8 @@ const PlotModal = ({ land, memberNo, memberName, onClose, onPlotBooked, generate
         return { text: 'Waiting for payment confirmation...', icon: 'fa-spinner fa-pulse', color: '#F59E0B' };
       case 'success':
         return { text: 'Payment successful!', icon: 'fa-check-circle', color: '#10B981' };
-      case 'cancelled':
-        return { text: 'Payment cancelled', icon: 'fa-times-circle', color: '#EF4444' };
       case 'failed':
         return { text: 'Payment failed', icon: 'fa-exclamation-circle', color: '#EF4444' };
-      case 'timeout':
-        return { text: 'Payment timeout', icon: 'fa-clock', color: '#EF4444' };
       default:
         return { text: '', icon: '', color: '' };
     }
@@ -333,14 +276,14 @@ const PlotModal = ({ land, memberNo, memberName, onClose, onPlotBooked, generate
         <div className="modal-header">
           <div className="modal-title">
             <h2>
-              {showPaymentForm
-                ? 'Complete Payment'
+              {showPaymentStatus
+                ? 'Payment Status'
                 : showBookingForm
                   ? 'Book Plot'
                   : `Plots - ${land.Description || 'Land'}`}
             </h2>
             <p>
-              {showPaymentForm || showBookingForm
+              {showPaymentStatus || showBookingForm
                 ? `Plot: ${selectedPlot?.plot_code} | Land: ${land['Land Code']}`
                 : `Land Code: ${land['Land Code']} | Region: ${land.Region || 'Unknown'} | Available: ${availablePlotsCount}`
               }
@@ -352,29 +295,27 @@ const PlotModal = ({ land, memberNo, memberName, onClose, onPlotBooked, generate
         </div>
 
         <div className="modal-content">
-          {showPaymentForm ? (
+          {showPaymentStatus ? (
             <div className="payment-status-view">
               <div className="payment-summary">
                 <div className="payment-amount">
-                  <span className="label">Amount to Pay:</span>
+                  <span className="label">Amount:</span>
                   <span className="value">{formatCurrency(formData.bookingFee)}</span>
                 </div>
                 <div className="payment-phone">
-                  <span className="label">Phone Number:</span>
+                  <span className="label">Phone:</span>
                   <span className="value">{formData.phoneNumber}</span>
                 </div>
                 <div className="payment-member">
-                  <span className="label">Member Number:</span>
+                  <span className="label">Member No:</span>
                   <span className="value">{memberNo || formData.memberNo}</span>
                 </div>
               </div>
 
-              {paymentMessage && (
-                <div className={`payment-message ${paymentStatus}`}>
-                  <i className={`fas ${getPaymentStatusMessage().icon}`} style={{ color: getPaymentStatusMessage().color }}></i>
-                  <p>{paymentMessage}</p>
-                </div>
-              )}
+              <div className={`payment-message ${paymentStatus}`}>
+                <i className={`fas ${getPaymentStatusMessage().icon}`} style={{ color: getPaymentStatusMessage().color }}></i>
+                <p>{paymentMessage || 'Processing your payment...'}</p>
+              </div>
 
               {paymentStatus === 'pending' && (
                 <div className="payment-instructions">
@@ -392,15 +333,11 @@ const PlotModal = ({ land, memberNo, memberName, onClose, onPlotBooked, generate
                 </div>
               )}
 
-              {(paymentStatus === 'cancelled' || paymentStatus === 'failed' || paymentStatus === 'timeout') && (
+              {paymentStatus === 'failed' && (
                 <div className="payment-actions">
                   <button
                     className="retry-button"
-                    onClick={() => {
-                      setShowPaymentForm(false);
-                      setPaymentStatus(null);
-                      setPaymentMessage('');
-                    }}
+                    onClick={handleBackToPlots}
                   >
                     <i className="fas fa-redo"></i>
                     Try Again
@@ -408,10 +345,10 @@ const PlotModal = ({ land, memberNo, memberName, onClose, onPlotBooked, generate
                 </div>
               )}
 
-              {paymentStatus === 'success' && bookingLoading && (
+              {paymentStatus === 'success' && (
                 <div className="booking-progress">
-                  <i className="fas fa-spinner fa-pulse"></i>
-                  <p>Booking your plot...</p>
+                  <i className="fas fa-check-circle" style={{ color: '#10B981' }}></i>
+                  <p>Plot booking completed successfully!</p>
                 </div>
               )}
 
@@ -425,19 +362,11 @@ const PlotModal = ({ land, memberNo, memberName, onClose, onPlotBooked, generate
               <div className="payment-footer">
                 <button
                   className="back-button"
-                  onClick={() => {
-                    setShowPaymentForm(false);
-                    setPaymentStatus(null);
-                    setPaymentMessage('');
-                    if (paymentCheckInterval) {
-                      clearInterval(paymentCheckInterval);
-                      setPaymentCheckInterval(null);
-                    }
-                  }}
+                  onClick={handleBackToPlots}
                   disabled={paymentStatus === 'pending'}
                 >
                   <i className="fas fa-arrow-left"></i>
-                  Back
+                  Back to Plots
                 </button>
               </div>
             </div>
@@ -530,9 +459,6 @@ const PlotModal = ({ land, memberNo, memberName, onClose, onPlotBooked, generate
                       step="0.01"
                       placeholder="Enter amount"
                     />
-                    <small className="input-hint">
-                      Plot price: {formatCurrency(selectedPlot?.member_price)}
-                    </small>
                   </div>
                 </div>
 
@@ -548,7 +474,6 @@ const PlotModal = ({ land, memberNo, memberName, onClose, onPlotBooked, generate
                     pattern="[0-9]{9,12}"
                     title="Please enter a valid phone number (9-12 digits)"
                   />
-                  <small className="input-hint">Enter the M-PESA number to pay from</small>
                 </div>
 
                 {message && (
@@ -566,7 +491,7 @@ const PlotModal = ({ land, memberNo, memberName, onClose, onPlotBooked, generate
                     disabled={paymentLoading}
                   >
                     <i className="fas fa-arrow-left"></i>
-                    Back to Plots
+                    Back
                   </button>
                   <button
                     type="submit"
@@ -576,7 +501,7 @@ const PlotModal = ({ land, memberNo, memberName, onClose, onPlotBooked, generate
                     {paymentLoading ? (
                       <>
                         <i className="fas fa-spinner fa-spin"></i>
-                        Sending STK Push...
+                        Sending...
                       </>
                     ) : (
                       <>
@@ -590,7 +515,7 @@ const PlotModal = ({ land, memberNo, memberName, onClose, onPlotBooked, generate
 
               <div className="payment-info">
                 <i className="fas fa-info-circle"></i>
-                <p>You will receive an STK push on your phone to complete the payment. The plot will be booked automatically after successful payment.</p>
+                <p>You will receive an STK push on your phone to complete the payment.</p>
               </div>
             </div>
           ) : (
@@ -617,13 +542,6 @@ const PlotModal = ({ land, memberNo, memberName, onClose, onPlotBooked, generate
                 </div>
               ) : (
                 <>
-                  {message && (
-                    <div className={`message ${message.includes('success') ? 'success' : 'error'}`}>
-                      <i className={`fas ${message.includes('success') ? 'fa-check-circle' : 'fa-exclamation-circle'}`}></i>
-                      {message}
-                    </div>
-                  )}
-
                   <div className="plots-grid">
                     {plots.map((plot, index) => (
                       <div key={plot.plot_code || index} className={`plot-card ${getStatusColor(plot.plot_status)}`}>
@@ -684,6 +602,7 @@ const PlotModal = ({ land, memberNo, memberName, onClose, onPlotBooked, generate
         </div>
       </div>
 
+      {/* ADD THIS CSS FOR THE PLOT MODAL */}
       <style jsx>{`
         .plot-modal-overlay {
           position: fixed;
@@ -817,6 +736,26 @@ const PlotModal = ({ land, memberNo, memberName, onClose, onPlotBooked, generate
         .error-state p {
           color: #6b7280;
           margin-bottom: 1.5rem;
+        }
+
+        .retry-button {
+          background: #7A1F23;
+          color: white;
+          border: none;
+          padding: 0.75rem 2rem;
+          border-radius: 8px;
+          font-weight: 600;
+          cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          gap: 0.5rem;
+          transition: all 0.3s ease;
+        }
+
+        .retry-button:hover {
+          background: #5a1519;
+          transform: translateY(-1px);
+          box-shadow: 0 4px 12px rgba(122, 31, 35, 0.3);
         }
 
         /* Empty State */
@@ -1280,9 +1219,7 @@ const PlotModal = ({ land, memberNo, memberName, onClose, onPlotBooked, generate
           color: #16A34A;
         }
 
-        .payment-message.cancelled,
-        .payment-message.failed,
-        .payment-message.timeout {
+        .payment-message.failed {
           background: #FEE2E2;
           color: #DC2626;
         }
@@ -1339,26 +1276,6 @@ const PlotModal = ({ land, memberNo, memberName, onClose, onPlotBooked, generate
 
         .payment-actions {
           margin-bottom: 2rem;
-        }
-
-        .retry-button {
-          background: #7A1F23;
-          color: white;
-          border: none;
-          padding: 0.75rem 2rem;
-          border-radius: 8px;
-          font-weight: 600;
-          cursor: pointer;
-          display: inline-flex;
-          align-items: center;
-          gap: 0.5rem;
-          transition: all 0.3s ease;
-        }
-
-        .retry-button:hover {
-          background: #5a1519;
-          transform: translateY(-1px);
-          box-shadow: 0 4px 12px rgba(122, 31, 35, 0.3);
         }
 
         .booking-progress {
