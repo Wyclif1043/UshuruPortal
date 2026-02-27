@@ -3,7 +3,7 @@ import axios from 'axios';
 // Use environment variable for base URL
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
-console.log('🔧 API Base URL:', API_BASE_URL); // Debug log
+console.log('🔧 API Base URL:', API_BASE_URL);
 
 // Create axios instance with base URL
 const api = axios.create({

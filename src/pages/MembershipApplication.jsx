@@ -48,6 +48,12 @@ const MembershipApplication = () => {
     nominees: []
   });
 
+  // New state for KRA PIN validation
+  const [kraPinError, setKraPinError] = useState('');
+  
+  // New state for Entrance Fee validation
+  const [entranceFeeError, setEntranceFeeError] = useState('');
+
   // Nationality options
   const nationalityOptions = [
     { value: '0', label: 'Kenyan' },
@@ -141,8 +147,56 @@ const MembershipApplication = () => {
     { value: 'OTHER', label: 'Other' }
   ];
 
+  // KRA PIN validation function
+  const validateKRAPin = (pin) => {
+    if (!pin) {
+      setKraPinError('');
+      return true; // PIN is optional
+    }
+    
+    // Format: A123456789X (A + 9 digits + X)
+    const kraPinRegex = /^[A-Za-z]\d{9}[A-Za-z]$/;
+    
+    if (!kraPinRegex.test(pin)) {
+      setKraPinError('KRA PIN should be in format A123456789X (one letter, 9 digits, one letter)');
+      return false;
+    }
+    
+    setKraPinError('');
+    return true;
+  };
+
+  // Entrance Fee validation function
+  const validateEntranceFee = (fee) => {
+    if (!fee) {
+      setEntranceFeeError('Entrance fee is required');
+      return false;
+    }
+    
+    const feeNumber = parseFloat(fee);
+    
+    if (isNaN(feeNumber) || feeNumber < 2000) {
+      setEntranceFeeError('Entrance fee minimum is KES 2,000');
+      return false;
+    }
+    
+    setEntranceFeeError('');
+    return true;
+  };
+
   const handleApplicantChange = (e) => {
     const { name, value } = e.target;
+    
+    // Validate KRA PIN when it changes
+    if (name === 'kRAPin') {
+      validateKRAPin(value);
+    }
+    
+    // Validate Entrance Fee when it changes
+    if (name === 'entranceFeeContribution') {
+      validateEntranceFee(value);
+    }
+    
     setFormData(prev => ({
       ...prev,
       applicant: {
@@ -278,6 +332,11 @@ const MembershipApplication = () => {
           setMessage('Please select your gender');
           return false;
         }
+        // Validate KRA PIN if provided
+        if (applicant.kRAPin && !validateKRAPin(applicant.kRAPin)) {
+          setMessage(kraPinError || 'Invalid KRA PIN format');
+          return false;
+        }
         return true;
       
       case 2:
@@ -304,8 +363,9 @@ const MembershipApplication = () => {
           setMessage('Please select your employment status');
           return false;
         }
-        if (!applicant.entranceFeeContribution) {
-          setMessage('Please enter entrance fee contribution amount');
+        // Validate entrance fee
+        if (!validateEntranceFee(applicant.entranceFeeContribution)) {
+          setMessage(entranceFeeError || 'Please enter a valid entrance fee amount');
           return false;
         }
         if (!applicant.sharesContribution) {
@@ -347,6 +407,18 @@ const MembershipApplication = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    // Final validation before submission
+    if (formData.applicant.kRAPin && !validateKRAPin(formData.applicant.kRAPin)) {
+      setMessage(kraPinError || 'Invalid KRA PIN format');
+      return;
+    }
+    
+    if (!validateEntranceFee(formData.applicant.entranceFeeContribution)) {
+      setMessage(entranceFeeError || 'Entrance fee must be at least KES 2,000');
+      return;
+    }
+    
     setLoading(true);
     setMessage('');
 
@@ -657,8 +729,13 @@ const MembershipApplication = () => {
                       name="kRAPin"
                       value={formData.applicant.kRAPin}
                       onChange={handleApplicantChange}
-                      placeholder="Enter KRA PIN"
+                      onBlur={(e) => validateKRAPin(e.target.value)}
+                      placeholder="A123456789X"
+                      className={kraPinError ? 'error-input' : ''}
                     />
+                    {kraPinError && (
+                      <div className="field-error">{kraPinError}</div>
+                    )}
                   </div>
                 </div>
 
@@ -813,7 +890,7 @@ const MembershipApplication = () => {
                       value={formData.applicant.personalEmail}
                       onChange={handleApplicantChange}
                       required
-                      placeholder="john.doe@email.com"
+                      placeholder="jane.muthoni@email.com"
                     />
                   </div>
                 </div>
@@ -933,10 +1010,17 @@ const MembershipApplication = () => {
                       name="entranceFeeContribution"
                       value={formData.applicant.entranceFeeContribution}
                       onChange={handleApplicantChange}
+                      onBlur={(e) => validateEntranceFee(e.target.value)}
                       required
-                      placeholder="1000.00"
+                      placeholder="2000.00"
+                      min="2000"
                       step="0.01"
+                      className={entranceFeeError ? 'error-input' : ''}
                     />
+                    {entranceFeeError && (
+                      <div className="field-error">{entranceFeeError}</div>
+                    )}
+                    <small>Minimum: KES 2,000</small>
                   </div>
                   <div className="form-group">
                     <label>Shares Contribution (KES) *</label>
@@ -1496,6 +1580,11 @@ const MembershipApplication = () => {
             box-shadow: 0 0 0 3px rgba(122, 31, 35, 0.1);
           }
 
+          .form-group input.error-input {
+            border-color: #dc2626;
+            background-color: #fef2f2;
+          }
+
           .form-group textarea {
             resize: vertical;
             min-height: 80px;
@@ -1504,6 +1593,12 @@ const MembershipApplication = () => {
           .form-group small {
             font-size: 0.75rem;
             color: #6b7280;
+            margin-top: 0.25rem;
+          }
+
+          .field-error {
+            color: #dc2626;
+            font-size: 0.75rem;
             margin-top: 0.25rem;
           }
 

@@ -65,7 +65,7 @@ const MemberStatement = () => {
       const memberNo = memberNumber.trim();
       
       // Build API URL with parameters
-      let apiUrl = `http://88.99.215.90:8001/api/member-detailed-report/?member_no=${memberNo}`;
+      let apiUrl = `http://127.0.0.1:8000/api/member-detailed-report/?member_no=${memberNo}`;
       
       // Add date filter if provided
       if (dateRange.startDate) {
@@ -151,7 +151,7 @@ const MemberStatement = () => {
       console.error('Full error:', err);
       
       if (err.name === 'TypeError' && err.message.includes('Failed to fetch')) {
-        setError('Network error. Please check:\n1. Is Django server running at http://88.99.215.90:8001?\n2. Check browser console for CORS errors');
+        setError('Network error. Please check:\n1. Is Django server running at http://127.0.0.1:8000?\n2. Check browser console for CORS errors');
       } else {
         setError(err.message || 'Failed to generate report');
       }
@@ -168,7 +168,7 @@ const MemberStatement = () => {
     }
     
     const memberNo = memberNumber.trim();
-    let url = `http://88.99.215.90:8001/api/member-detailed-report/?member_no=${memberNo}`;
+    let url = `http://127.0.0.1:8000/api/member-detailed-report/?member_no=${memberNo}`;
     
     if (dateRange.startDate) {
       url += `&filter=${dateRange.startDate}`;
