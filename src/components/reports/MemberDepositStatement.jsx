@@ -62,7 +62,7 @@ const MemberDepositStatement = () => {
       const memberNo = memberNumber.trim();
       
       // Based on your API: http://127.0.0.1:8000/api/member-deposit-report/?member_no=CUST024&filter=2026-03-11
-      const apiUrl = `http://88.99.215.90:8001/api/member-deposit-report/?member_no=${memberNo}&filter=${dateRange.startDate}`;
+      const apiUrl = `http://127.0.0.1:8000/api/member-deposit-report/?member_no=${memberNo}&filter=${dateRange.startDate}`;
       
       console.log('Fetching from:', apiUrl);
       
@@ -131,7 +131,7 @@ const MemberDepositStatement = () => {
       
       if (err.name === 'TypeError' && err.message.includes('Failed to fetch')) {
         setError('Network error. Please check:');
-        setError(prev => prev + '\n1. Is Django server running at http://88.99.215.90:8001?');
+        setError(prev => prev + '\n1. Is Django server running at http://127.0.0.1:8000?');
         setError(prev => prev + '\n2. Check browser console for CORS errors');
       } else {
         setError(err.message || 'Failed to generate report');
@@ -149,7 +149,7 @@ const MemberDepositStatement = () => {
     }
     
     const memberNo = memberNumber.trim();
-    const url = `http://88.99.215.90:8001/api/member-deposit-report/?member_no=${memberNo}&filter=${dateRange.startDate}`;
+    const url = `http://127.0.0.1:8000/api/member-deposit-report/?member_no=${memberNo}&filter=${dateRange.startDate}`;
     
     // Create hidden iframe to trigger download
     const iframe = document.createElement('iframe');
@@ -173,7 +173,7 @@ const MemberDepositStatement = () => {
     }
     
     const memberNo = memberNumber.trim();
-    const url = `http://88.99.215.90:8001/api/member-deposit-report/?member_no=${memberNo}&filter=${dateRange.startDate}`;
+    const url = `http://127.0.0.1:8000/api/member-deposit-report/?member_no=${memberNo}&filter=${dateRange.startDate}`;
     window.open(url, '_blank');
     
     setSuccess('Opening report in new tab...');
@@ -323,7 +323,7 @@ const MemberDepositStatement = () => {
           <li>Open Developer Tools (F12)</li>
           <li>Check Console tab for errors</li>
           <li>Check Network tab for API requests</li>
-          <li>Ensure Django server is running at http://88.99.215.90:8001</li>
+          <li>Ensure Django server is running at http://127.0.0.1:8000</li>
           <li>Try "Direct Download" or "Open in New Tab" buttons</li>
         </ol>
       </div>

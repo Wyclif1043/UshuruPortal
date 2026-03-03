@@ -31,7 +31,7 @@ const MemberShareCertificate = () => {
       const memberNo = memberNumber.trim();
       
       // Build API URL with only member_no parameter
-      const apiUrl = `http://88.99.215.90:8001/api/member-share-certificate/?member_no=${memberNo}`;
+      const apiUrl = `http://127.0.0.1:8000/api/member-share-certificate/?member_no=${memberNo}`;
       
       console.log('Fetching from:', apiUrl);
       
@@ -99,7 +99,7 @@ const MemberShareCertificate = () => {
       console.error('Full error:', err);
       
       if (err.name === 'TypeError' && err.message.includes('Failed to fetch')) {
-        setError('Network error. Please check:\n1. Is Django server running at http://88.99.215.90:8001?\n2. Check browser console for CORS errors');
+        setError('Network error. Please check:\n1. Is Django server running at http://127.0.0.1:8000?\n2. Check browser console for CORS errors');
       } else {
         setError(err.message || 'Failed to generate share certificate');
       }
@@ -116,7 +116,7 @@ const MemberShareCertificate = () => {
     }
     
     const memberNo = memberNumber.trim();
-    const url = `http://88.99.215.90:8001/api/member-share-certificate/?member_no=${memberNo}`;
+    const url = `http://127.0.0.1:8000/api/member-share-certificate/?member_no=${memberNo}`;
     
     // Create hidden iframe to trigger download
     const iframe = document.createElement('iframe');
@@ -140,7 +140,7 @@ const MemberShareCertificate = () => {
     }
     
     const memberNo = memberNumber.trim();
-    const url = `http://88.99.215.90:8001/api/member-share-certificate/?member_no=${memberNo}`;
+    const url = `http://127.0.0.1:8000/api/member-share-certificate/?member_no=${memberNo}`;
     
     window.open(url, '_blank');
     

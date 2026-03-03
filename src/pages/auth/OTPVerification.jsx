@@ -14,7 +14,6 @@ const OTPVerification = () => {
   const [isMobile, setIsMobile] = useState(false);
   const [countdown, setCountdown] = useState(60);
   const [canResend, setCanResend] = useState(false);
-  const [autoFilled, setAutoFilled] = useState(false);
   
   const dispatch = useDispatch();
   const navigate = useNavigate();
@@ -43,53 +42,16 @@ const OTPVerification = () => {
     }
   }, [countdown]);
 
-  // Auto-fill OTP from localStorage when component mounts
-  useEffect(() => {
-    const generatedOTP = localStorage.getItem('generatedOTP');
-    const otpTimestamp = localStorage.getItem('otpTimestamp');
-    
-    // Check if OTP is still valid (within 10 minutes)
-    if (generatedOTP && otpTimestamp) {
-      const timeDiff = Date.now() - parseInt(otpTimestamp);
-      const tenMinutes = 10 * 60 * 1000; // 10 minutes in milliseconds
-      
-      if (timeDiff < tenMinutes && !otp && !autoFilled) {
-        setOtp(generatedOTP);
-        setAutoFilled(true);
-        
-        // Auto-submit after a short delay
-        const autoSubmitTimer = setTimeout(() => {
-          if (!isLoading) {
-            handleSubmit(null, generatedOTP);
-          }
-        }, 1500); // 1.5 second delay to show user the auto-filled OTP
-        
-        return () => clearTimeout(autoSubmitTimer);
-      } else if (timeDiff >= tenMinutes) {
-        // Clear expired OTP
-        localStorage.removeItem('generatedOTP');
-        localStorage.removeItem('otpTimestamp');
-      }
-    }
-  }, [otp, autoFilled, isLoading]);
-
   const handleOtpChange = (e) => {
     // Only allow numbers and limit to 4 digits
     const value = e.target.value.replace(/\D/g, '').slice(0, 4);
     setOtp(value);
-    
-    // Auto-submit when 4 digits are entered
-    if (value.length === 4 && !isLoading) {
-      handleSubmit(null, value);
-    }
   };
 
-  const handleSubmit = async (e, otpValue = otp) => {
-    if (e) e.preventDefault();
+  const handleSubmit = async (e) => {
+    e.preventDefault();
     
-    const otpToVerify = otpValue || otp;
-    
-    if (otpToVerify.length !== 4) {
+    if (otp.length !== 4) {
       dispatch(otpVerificationFailure('Please enter a valid 4-digit OTP'));
       return;
     }
@@ -99,16 +61,12 @@ const OTPVerification = () => {
     try {
       const otpData = {
         username: memberNumber,
-        otpCode: otpToVerify,
+        otpCode: otp,
       };
       
       const response = await authService.verifyOTP(otpData);
       
       if (response.status === 'success') {
-        // Clear the stored OTP after successful verification
-        localStorage.removeItem('generatedOTP');
-        localStorage.removeItem('otpTimestamp');
-        
         dispatch(otpVerificationSuccess(response));
         // Redirect to dashboard
         navigate('/dashboard');
@@ -130,11 +88,6 @@ const OTPVerification = () => {
       setCountdown(60);
       setCanResend(false);
       setOtp('');
-      setAutoFilled(false);
-      
-      // Clear old OTP from localStorage when resending
-      localStorage.removeItem('generatedOTP');
-      localStorage.removeItem('otpTimestamp');
       
       // Show success message or notification
       alert('OTP has been resent to your registered contact');
@@ -145,9 +98,6 @@ const OTPVerification = () => {
   };
 
   const handleBackToLogin = () => {
-    // Clear stored OTP when going back to login
-    localStorage.removeItem('generatedOTP');
-    localStorage.removeItem('otpTimestamp');
     navigate('/login');
   };
 
@@ -286,17 +236,6 @@ const OTPVerification = () => {
                 </div>
                 <p className="instruction-text">
                   We've sent a 4-digit verification code to the mobile number associated with your account.
-                  {autoFilled && (
-                    <span style={{
-                      display: 'block', 
-                      marginTop: '0.5rem', 
-                      fontWeight: 'bold', 
-                      color: '#F5B800',
-                      fontSize: '0.8rem'
-                    }}>
-                      <i className="fas fa-bolt"></i> OTP Auto-filled & will auto-verify shortly...
-                    </span>
-                  )}
                 </p>
               </div>
 
@@ -316,13 +255,12 @@ const OTPVerification = () => {
                   maxLength={4}
                   pattern="\d{4}"
                   inputMode="numeric"
-                  autoComplete="one-time-code"
+                  autoComplete="off"
                   autoFocus
-                  disabled={autoFilled && isLoading}
                 />
                 <div className="otp-hint">
                   <i className="fas fa-info-circle"></i>
-                  {autoFilled ? 'OTP auto-filled from system' : 'Enter the 4-digit code sent to your device'}
+                  Enter the 4-digit code sent to your device
                 </div>
               </div>
 
@@ -341,7 +279,7 @@ const OTPVerification = () => {
                 {isLoading ? (
                   <span className="button-content">
                     <i className="fas fa-spinner fa-spin"></i>
-                    {autoFilled ? 'Auto-verifying...' : 'Verifying...'}
+                    Verifying...
                   </span>
                 ) : (
                   <span className="button-content">

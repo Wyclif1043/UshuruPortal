@@ -10,6 +10,8 @@ const CustomerPlotBooking = ({ customerNo, land, plots, onBookingSuccess, onBack
   const [success, setSuccess] = useState('');
   const [paymentMessage, setPaymentMessage] = useState('');
   const [paymentStatus, setPaymentStatus] = useState(null);
+  const [sessionID, setSessionID] = useState(null);
+  const [paymentCheckInterval, setPaymentCheckInterval] = useState(null);
   const [formData, setFormData] = useState({
     bookingDate: new Date().toISOString().split('T')[0],
     phoneNumber: '',
@@ -28,6 +30,62 @@ const CustomerPlotBooking = ({ customerNo, land, plots, onBookingSuccess, onBack
       document.body.style.overflow = 'unset';
     };
   }, [showPaymentModal]);
+
+  // Clean up interval on unmount
+  useEffect(() => {
+    return () => {
+      if (paymentCheckInterval) {
+        clearInterval(paymentCheckInterval);
+      }
+    };
+  }, [paymentCheckInterval]);
+
+  // Poll for payment status
+  const startPaymentStatusPolling = (sessionId) => {
+    if (paymentCheckInterval) {
+      clearInterval(paymentCheckInterval);
+    }
+
+    const interval = setInterval(async () => {
+      try {
+        const response = await fetch(`http://127.0.0.1:8000/api/payment-status/?sessionID=${sessionId}`);
+        const statusResponse = await response.json();
+        console.log('📊 Payment status check:', statusResponse);
+
+        if (statusResponse.status === 'processed') {
+          setPaymentStatus('success');
+          setPaymentMessage('Payment successful! Proceeding with plot booking...');
+          
+          // Get the M-PESA reference from the response
+          const transactionRef = statusResponse.transaction_ref || 
+                                statusResponse.booking_result?.transactionReferenceNo || 
+                                `MPESA${Date.now()}`;
+          
+          setFormData(prev => ({
+            ...prev,
+            transactionReferenceNo: transactionRef
+          }));
+
+          // Proceed with booking
+          await handleBookingSubmit(transactionRef);
+          
+          clearInterval(interval);
+          setPaymentCheckInterval(null);
+        } else if (statusResponse.payment_status === 'failed') {
+          setPaymentStatus('failed');
+          setPaymentMessage(statusResponse.result_desc || 'Payment failed');
+          clearInterval(interval);
+          setPaymentCheckInterval(null);
+        }
+        // Keep polling if still pending
+      } catch (err) {
+        console.error('❌ Error checking payment status:', err);
+        // Don't clear interval on error, just log
+      }
+    }, 3000); // Poll every 3 seconds
+
+    setPaymentCheckInterval(interval);
+  };
 
   // Helper function to parse price (removes commas and converts to number)
   const parsePrice = (price) => {
@@ -60,6 +118,10 @@ const CustomerPlotBooking = ({ customerNo, land, plots, onBookingSuccess, onBack
     setError('');
     setPaymentMessage('');
     setPaymentStatus(null);
+    if (paymentCheckInterval) {
+      clearInterval(paymentCheckInterval);
+      setPaymentCheckInterval(null);
+    }
     setFormData(prev => ({
       ...prev,
       phoneNumber: '',
@@ -116,18 +178,30 @@ const CustomerPlotBooking = ({ customerNo, land, plots, onBookingSuccess, onBack
         throw new Error('Please enter a valid Safaricom number (e.g., 254706126213)');
       }
 
+      // Generate session ID
+      const newSessionID = generateSessionId();
+      setSessionID(newSessionID);
+
       const paymentData = {
-        sessionID: generateSessionId(),
         phonenumber: formattedPhone,
         amount: formData.bookingFee,
         accno: customerNo || formattedPhone,
         transactionType: "LandDeposit",
-        orgCode: "68"
+        orgCode: "68",
+        bookingType: "nonmember", // Identifies this as non-member booking
+        bookingData: {
+          customerNo: customerNo,
+          landCode: land['Land Code'],
+          plotCode: selectedPlot.plot_code,
+          bookingDate: formData.bookingDate,
+          buyerName: "Customer",
+          phoneNumber: formattedPhone
+        }
       };
 
-      console.log('Initiating STK Push for customer:', paymentData);
+      console.log('📱 Initiating STK Push for customer:', paymentData);
 
-      const response = await fetch('http://88.99.215.90:8001/api/mpesa-stk-push/', {
+      const response = await fetch('http://127.0.0.1:8000/api/mpesa-stk-push/', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -136,22 +210,14 @@ const CustomerPlotBooking = ({ customerNo, land, plots, onBookingSuccess, onBack
       });
 
       const data = await response.json();
-      console.log('STK Push response:', data);
+      console.log('✅ STK Push response:', data);
 
       if (data.ResultCode === "0") {
-        setPaymentMessage('Payment successful! Proceeding with plot booking...');
-        setPaymentStatus('success');
-
-        const transactionRef = data.TransactionID || `MPESA${Date.now()}`;
-        setFormData(prev => ({
-          ...prev,
-          transactionReferenceNo: transactionRef
-        }));
-
-        setTimeout(async () => {
-          await handleBookingSubmit(transactionRef);
-        }, 1500);
-
+        setPaymentStatus('pending');
+        setPaymentMessage('STK push sent. Please check your phone and enter PIN to complete payment.');
+        
+        // Start polling for payment status
+        startPaymentStatusPolling(data.sessionID || newSessionID);
       } else if (data.ResultCode === "1032") {
         setPaymentMessage('Transaction cancelled by user');
         setPaymentStatus('cancelled');
@@ -162,11 +228,11 @@ const CustomerPlotBooking = ({ customerNo, land, plots, onBookingSuccess, onBack
         setPaymentMessage('Insufficient balance. Please top up and try again.');
         setPaymentStatus('failed');
       } else {
-        setPaymentMessage(data.ResultDesc || 'Payment failed');
+        setPaymentMessage(data.ResultDesc || 'Failed to initiate payment');
         setPaymentStatus('failed');
       }
     } catch (err) {
-      console.error('Payment initiation error:', err);
+      console.error('❌ Payment initiation error:', err);
       setPaymentMessage(err.message || 'Error initiating payment');
       setPaymentStatus('failed');
     } finally {
@@ -205,12 +271,13 @@ const CustomerPlotBooking = ({ customerNo, land, plots, onBookingSuccess, onBack
       if (data.success) {
         setSuccess(`
           Plot booked successfully! 
+          Transaction Reference: ${transactionRef}
           We will send you notifications about your plot status via email and SMS.
           Please check your registered contact details for updates.
         `);
         // Close payment modal after successful booking
-        setShowPaymentModal(false);
         setTimeout(() => {
+          setShowPaymentModal(false);
           onBookingSuccess();
         }, 4000);
       } else {
@@ -351,7 +418,7 @@ const CustomerPlotBooking = ({ customerNo, land, plots, onBookingSuccess, onBack
                           <div
                             key={`${rowIndex}-${colIndex}`}
                             className={`plot-card ${getStatusColor(plot.plot_status)} ${selectedPlot?.plot_code === plot.plot_code ? 'selected' : ''}`}
-                            onClick={() => handlePlotSelect(plot)}
+                            onClick={() => plot.plot_status?.toLowerCase() === 'available' && handlePlotSelect(plot)}
                           >
                             <div className="plot-card-header">
                               <h3 className="plot-code">{plot.plot_code}</h3>
@@ -383,10 +450,14 @@ const CustomerPlotBooking = ({ customerNo, land, plots, onBookingSuccess, onBack
                                   <i className="fas fa-check-circle"></i>
                                   Selected
                                 </div>
-                              ) : (
+                              ) : plot.plot_status?.toLowerCase() === 'available' ? (
                                 <button className="select-plot-button">
                                   <i className="fas fa-hand-pointer"></i>
                                   Select Plot
+                                </button>
+                              ) : (
+                                <button className="select-plot-button disabled" disabled>
+                                  {plot.plot_status || 'Unavailable'}
                                 </button>
                               )}
                             </div>
@@ -421,7 +492,7 @@ const CustomerPlotBooking = ({ customerNo, land, plots, onBookingSuccess, onBack
         <div className="payment-modal-overlay" onClick={handleClosePaymentModal}>
           <div className="payment-modal-container" onClick={(e) => e.stopPropagation()}>
             <div className="payment-modal-header">
-              <h3>Complete Payment</h3>
+              <h3>{paymentStatus === 'pending' ? 'Payment Status' : 'Complete Payment'}</h3>
               <button className="payment-close-button" onClick={handleClosePaymentModal}>
                 <i className="fas fa-times"></i>
               </button>
@@ -446,123 +517,144 @@ const CustomerPlotBooking = ({ customerNo, land, plots, onBookingSuccess, onBack
                 </div>
               )}
 
-              {/* Selected Plot Summary */}
-              <div className="payment-plot-summary">
-                <div className="summary-header">
-                  <span className="plot-label">Selected Plot:</span>
-                  <span className="plot-code-badge">{selectedPlot.plot_code}</span>
-                </div>
-                <div className="summary-details">
-                  <div className="summary-row">
-                    <span>Land:</span>
-                    <span>{land.Description}</span>
-                  </div>
-                  <div className="summary-row">
-                    <span>Area:</span>
-                    <span>{selectedPlot.area} acres</span>
-                  </div>
-                  <div className="summary-row">
-                    <span>Price:</span>
-                    <span className="price">{formatCurrency(selectedPlot.non_member_price)}</span>
+              {paymentStatus === 'pending' ? (
+                <div className="payment-status-container">
+                  <div className="payment-status-pending">
+                    <i className="fas fa-spinner fa-pulse fa-3x"></i>
+                    <h4>Waiting for Payment Confirmation</h4>
+                    <p>Please check your phone and enter your M-PESA PIN to complete the payment.</p>
+                    <div className="payment-details">
+                      <p><strong>Amount:</strong> KSh {formData.bookingFee}</p>
+                      <p><strong>Phone:</strong> {formData.phoneNumber}</p>
+                      <p><strong>Plot:</strong> {selectedPlot.plot_code}</p>
+                    </div>
+                    <div className="payment-timer">
+                      <i className="fas fa-hourglass-half"></i>
+                      <span>Processing... Do not close this window</span>
+                    </div>
                   </div>
                 </div>
-              </div>
+              ) : (
+                <>
+                  {/* Selected Plot Summary */}
+                  <div className="payment-plot-summary">
+                    <div className="summary-header">
+                      <span className="plot-label">Selected Plot:</span>
+                      <span className="plot-code-badge">{selectedPlot.plot_code}</span>
+                    </div>
+                    <div className="summary-details">
+                      <div className="summary-row">
+                        <span>Land:</span>
+                        <span>{land.Description}</span>
+                      </div>
+                      <div className="summary-row">
+                        <span>Area:</span>
+                        <span>{selectedPlot.area} acres</span>
+                      </div>
+                      <div className="summary-row">
+                        <span>Price:</span>
+                        <span className="price">{formatCurrency(selectedPlot.non_member_price)}</span>
+                      </div>
+                    </div>
+                  </div>
 
-              {/* Payment Form */}
-              <form onSubmit={handleInitiatePayment} className="payment-form">
-                <div className="form-group">
-                  <label htmlFor="bookingDate" className="form-label">
-                    Booking Date *
-                  </label>
-                  <input
-                    id="bookingDate"
-                    name="bookingDate"
-                    type="date"
-                    required
-                    value={formData.bookingDate}
-                    onChange={handleInputChange}
-                    className="form-input"
-                  />
-                </div>
+                  {/* Payment Form */}
+                  <form onSubmit={handleInitiatePayment} className="payment-form">
+                    <div className="form-group">
+                      <label htmlFor="bookingDate" className="form-label">
+                        Booking Date *
+                      </label>
+                      <input
+                        id="bookingDate"
+                        name="bookingDate"
+                        type="date"
+                        required
+                        value={formData.bookingDate}
+                        onChange={handleInputChange}
+                        className="form-input"
+                      />
+                    </div>
 
-                <div className="form-group">
-                  <label htmlFor="bookingFee" className="form-label">
-                    Booking Fee (KSh) *
-                  </label>
-                  <input
-                    id="bookingFee"
-                    name="bookingFee"
-                    type="number"
-                    required
-                    value={formData.bookingFee}
-                    onChange={handleInputChange}
-                    min="0"
-                    step="0.01"
-                    placeholder="Enter amount"
-                    className="form-input"
-                  />
-                  <small className="input-hint">
-                    Suggested: {formatCurrency(selectedPlot.non_member_price)}
-                  </small>
-                </div>
+                    <div className="form-group">
+                      <label htmlFor="bookingFee" className="form-label">
+                        Booking Fee (KSh) *
+                      </label>
+                      <input
+                        id="bookingFee"
+                        name="bookingFee"
+                        type="number"
+                        required
+                        value={formData.bookingFee}
+                        onChange={handleInputChange}
+                        min="0"
+                        step="0.01"
+                        placeholder="Enter amount"
+                        className="form-input"
+                      />
+                      <small className="input-hint">
+                        Suggested: {formatCurrency(selectedPlot.non_member_price)}
+                      </small>
+                    </div>
 
-                <div className="form-group">
-                  <label htmlFor="phoneNumber" className="form-label">
-                    M-PESA Phone Number *
-                  </label>
-                  <input
-                    id="phoneNumber"
-                    name="phoneNumber"
-                    type="tel"
-                    required
-                    value={formData.phoneNumber}
-                    onChange={handleInputChange}
-                    placeholder="e.g., 254706126213 or 0706126213"
-                    pattern="[0-9]{9,12}"
-                    title="Please enter a valid phone number (9-12 digits)"
-                    className="form-input"
-                  />
-                  <small className="input-hint">Enter the M-PESA number to pay from</small>
-                </div>
+                    <div className="form-group">
+                      <label htmlFor="phoneNumber" className="form-label">
+                        M-PESA Phone Number *
+                      </label>
+                      <input
+                        id="phoneNumber"
+                        name="phoneNumber"
+                        type="tel"
+                        required
+                        value={formData.phoneNumber}
+                        onChange={handleInputChange}
+                        placeholder="e.g., 254706126213 or 0706126213"
+                        pattern="[0-9]{9,12}"
+                        title="Please enter a valid phone number (9-12 digits)"
+                        className="form-input"
+                      />
+                      <small className="input-hint">Enter the M-PESA number to pay from</small>
+                    </div>
 
-                <div className="payment-info">
-                  <i className="fas fa-info-circle"></i>
-                  <p>You will receive an STK push on your phone to complete the payment.</p>
-                </div>
+                    <div className="payment-info">
+                      <i className="fas fa-info-circle"></i>
+                      <p>You will receive an STK push on your phone to complete the payment. The plot will be booked automatically after successful payment.</p>
+                    </div>
 
-                <div className="payment-form-actions">
-                  <button
-                    type="button"
-                    onClick={handleClosePaymentModal}
-                    className="payment-secondary-button"
-                    disabled={paymentLoading || loading}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={paymentLoading || loading}
-                    className="payment-primary-button"
-                  >
-                    {paymentLoading ? (
-                      <>
-                        <i className="fas fa-spinner fa-spin"></i>
-                        Processing...
-                      </>
-                    ) : loading ? (
-                      <>
-                        <i className="fas fa-spinner fa-spin"></i>
-                        Booking...
-                      </>
-                    ) : (
-                      <>
-                        <i className="fas fa-mobile-alt"></i>
-                        Pay & Book
-                      </>
-                    )}
-                  </button>
-                </div>
-              </form>
+                    <div className="payment-form-actions">
+                      <button
+                        type="button"
+                        onClick={handleClosePaymentModal}
+                        className="payment-secondary-button"
+                        disabled={paymentLoading || loading}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={paymentLoading || loading}
+                        className="payment-primary-button"
+                      >
+                        {paymentLoading ? (
+                          <>
+                            <i className="fas fa-spinner fa-spin"></i>
+                            Sending STK...
+                          </>
+                        ) : loading ? (
+                          <>
+                            <i className="fas fa-spinner fa-spin"></i>
+                            Booking...
+                          </>
+                        ) : (
+                          <>
+                            <i className="fas fa-mobile-alt"></i>
+                            Pay with M-PESA
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -888,7 +980,7 @@ const CustomerPlotBooking = ({ customerNo, land, plots, onBookingSuccess, onBack
           background: white;
         }
 
-        .plot-card:hover {
+        .plot-card:hover:not(.placeholder):not([style*="hidden"]) {
           transform: translateY(-2px);
           box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
         }
@@ -995,10 +1087,16 @@ const CustomerPlotBooking = ({ customerNo, land, plots, onBookingSuccess, onBack
           white-space: nowrap;
         }
 
-        .select-plot-button:hover {
+        .select-plot-button:hover:not(:disabled) {
           background: linear-gradient(135deg, #5a1519, #7A1F23);
           transform: translateY(-1px);
           box-shadow: 0 4px 12px rgba(122, 31, 35, 0.3);
+        }
+
+        .select-plot-button.disabled {
+          background: #d1d5db;
+          cursor: not-allowed;
+          opacity: 0.7;
         }
 
         .selected-indicator {
@@ -1041,6 +1139,26 @@ const CustomerPlotBooking = ({ customerNo, land, plots, onBookingSuccess, onBack
 
         .empty-state p {
           margin-bottom: 1.5rem;
+        }
+
+        .primary-button {
+          background: linear-gradient(135deg, #7A1F23, #5a1519);
+          color: white;
+          border: none;
+          padding: 0.75rem 1.5rem;
+          border-radius: 8px;
+          font-weight: 600;
+          cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          gap: 0.5rem;
+          transition: all 0.3s ease;
+        }
+
+        .primary-button:hover {
+          background: linear-gradient(135deg, #5a1519, #7A1F23);
+          transform: translateY(-1px);
+          box-shadow: 0 4px 12px rgba(122, 31, 35, 0.3);
         }
 
         /* Payment Modal Styles */
@@ -1114,6 +1232,57 @@ const CustomerPlotBooking = ({ customerNo, land, plots, onBookingSuccess, onBack
 
         .payment-modal-content {
           padding: 2rem;
+        }
+
+        .payment-status-container {
+          text-align: center;
+          padding: 1rem 0;
+        }
+
+        .payment-status-pending {
+          color: #F59E0B;
+        }
+
+        .payment-status-pending i {
+          margin-bottom: 1rem;
+        }
+
+        .payment-status-pending h4 {
+          color: #1f2937;
+          margin-bottom: 1rem;
+        }
+
+        .payment-status-pending p {
+          color: #6b7280;
+          margin-bottom: 1.5rem;
+        }
+
+        .payment-details {
+          background: #f9fafb;
+          padding: 1rem;
+          border-radius: 0.75rem;
+          margin: 1.5rem 0;
+          text-align: left;
+        }
+
+        .payment-details p {
+          margin: 0.5rem 0;
+          color: #374151;
+        }
+
+        .payment-timer {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.5rem;
+          color: #7A1F23;
+          font-size: 0.875rem;
+          font-weight: 500;
+          padding: 1rem;
+          background: white;
+          border-radius: 8px;
+          border: 1px dashed #7A1F23;
+          margin-top: 1rem;
         }
 
         .payment-plot-summary {

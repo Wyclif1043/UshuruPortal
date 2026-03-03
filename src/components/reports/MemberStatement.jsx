@@ -209,7 +209,7 @@ const MemberStatement = () => {
     }
     
     const memberNo = memberNumber.trim();
-    let url = `http://88.99.215.90:8001/api/member-detailed-report/?member_no=${memberNo}`;
+    let url = `http://127.0.0.1:8000/api/member-detailed-report/?member_no=${memberNo}`;
     
     if (dateRange.startDate) {
       url += `&filter=${dateRange.startDate}`;
